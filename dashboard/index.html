@@ -1,0 +1,297 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="description" content="AI Navigation Assistant Dashboard — Real-time monitoring and control for visually impaired navigation system using YOLOv8, MiDaS depth estimation, and ByteTrack.">
+  <title>AI Nav Assistant — Dashboard</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <main class="dashboard">
+
+    <!-- ============================================================
+         Header
+         ============================================================ -->
+    <header class="dashboard-header">
+      <div class="header-brand">
+        <div class="logo-icon" aria-label="Logo">👁️</div>
+        <div>
+          <h1>AI Navigation Assistant</h1>
+          <span class="subtitle">YOLOv8 • MiDaS • ByteTrack</span>
+        </div>
+      </div>
+      <div class="header-status">
+        <div id="connection-badge" class="connection-badge disconnected" aria-live="polite">
+          <span class="connection-dot"></span>
+          <span id="connection-text">Disconnected</span>
+        </div>
+      </div>
+    </header>
+
+    <!-- ============================================================
+         Video Feed Panel (Left / Center)
+         ============================================================ -->
+    <section class="video-panel glass-card" aria-label="Live Camera Feed">
+      <div class="card-header">
+        <h2><span class="icon">📹</span> Live Camera Feed</h2>
+      </div>
+      <div class="card-body" style="padding: 8px; flex: 1; display: flex; flex-direction: column;">
+        <div class="video-container" id="video-container">
+          <!-- Overlay badges -->
+          <div class="video-overlay">
+            <span class="overlay-badge live" id="live-badge">LIVE</span>
+            <span class="overlay-badge" id="resolution-badge">— × —</span>
+          </div>
+          <!-- Video frame rendered here -->
+          <img id="video-frame" alt="Live annotated camera feed" style="display:none;">
+          <!-- Placeholder when no feed -->
+          <div class="video-placeholder" id="video-placeholder">
+            <span class="placeholder-icon">📡</span>
+            <span>Waiting for camera feed...</span>
+            <span style="font-size:0.7rem; opacity:0.6;">Start the server with <code style="color:var(--accent-primary);">python server.py</code></span>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ============================================================
+         Right Sidebar — Telemetry + Controls
+         ============================================================ -->
+    <aside class="sidebar" aria-label="Telemetry and Controls">
+
+      <!-- ---- Telemetry: FPS & Latency ---- -->
+      <div class="glass-card">
+        <div class="card-header">
+          <h2><span class="icon">⚡</span> Performance</h2>
+        </div>
+        <div class="card-body">
+          <!-- FPS -->
+          <div class="fps-display">
+            <span class="fps-value good" id="fps-value">0</span>
+            <span class="fps-unit">fps</span>
+          </div>
+
+          <div class="section-divider" style="margin: 12px 0;"></div>
+
+          <!-- Latency Bars -->
+          <div class="latency-grid">
+            <div class="latency-row">
+              <span class="latency-label">YOLO</span>
+              <div class="latency-bar-track">
+                <div class="latency-bar-fill yolo" id="lat-yolo" style="width: 0%;"></div>
+              </div>
+              <span class="latency-value" id="lat-yolo-val">0 ms</span>
+            </div>
+            <div class="latency-row">
+              <span class="latency-label">MiDaS</span>
+              <div class="latency-bar-track">
+                <div class="latency-bar-fill midas" id="lat-midas" style="width: 0%;"></div>
+              </div>
+              <span class="latency-value" id="lat-midas-val">0 ms</span>
+            </div>
+            <div class="latency-row">
+              <span class="latency-label">Tracking</span>
+              <div class="latency-bar-track">
+                <div class="latency-bar-fill tracking" id="lat-tracking" style="width: 0%;"></div>
+              </div>
+              <span class="latency-value" id="lat-tracking-val">0 ms</span>
+            </div>
+            <div class="latency-row">
+              <span class="latency-label">Total</span>
+              <div class="latency-bar-track">
+                <div class="latency-bar-fill total" id="lat-total" style="width: 0%;"></div>
+              </div>
+              <span class="latency-value" id="lat-total-val">0 ms</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ---- Hardware & Detection Stats ---- -->
+      <div class="glass-card">
+        <div class="card-header">
+          <h2><span class="icon">🖥️</span> System Info</h2>
+        </div>
+        <div class="card-body">
+          <div class="hw-grid">
+            <div class="hw-card">
+              <div class="hw-label">CUDA</div>
+              <div class="hw-value inactive" id="hw-cuda">N/A</div>
+            </div>
+            <div class="hw-card">
+              <div class="hw-label">Camera</div>
+              <div class="hw-value" id="hw-camera">idx 0</div>
+            </div>
+            <div class="hw-card">
+              <div class="hw-label">Model</div>
+              <div class="hw-value" id="hw-model">—</div>
+            </div>
+            <div class="hw-card">
+              <div class="hw-label">Device</div>
+              <div class="hw-value" id="hw-device">CPU</div>
+            </div>
+          </div>
+
+          <div class="section-divider" style="margin: 14px 0;"></div>
+
+          <!-- Detection Stats -->
+          <div class="detection-stats">
+            <div class="detection-count">
+              <span class="count-value" id="obj-count">0</span>
+              <span class="count-label">tracked objects</span>
+            </div>
+            <div class="class-badges" id="class-badges">
+              <!-- Dynamically populated -->
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ---- Sound Controls ---- -->
+      <div class="glass-card">
+        <div class="card-header">
+          <h2><span class="icon">🔊</span> Sound Controls</h2>
+        </div>
+        <div class="card-body">
+          <div class="control-group">
+            <div class="slider-control">
+              <div class="slider-header">
+                <span class="slider-label">Volume</span>
+                <span class="slider-value" id="volume-val">100%</span>
+              </div>
+              <input type="range" id="ctrl-volume" min="0" max="100" value="100" aria-label="TTS Volume">
+            </div>
+
+            <div class="slider-control">
+              <div class="slider-header">
+                <span class="slider-label">Speech Rate</span>
+                <span class="slider-value" id="rate-val">175 wpm</span>
+              </div>
+              <input type="range" id="ctrl-rate" min="100" max="300" value="175" step="5" aria-label="Speech Rate">
+            </div>
+
+            <div class="select-control">
+              <span class="select-label">Language</span>
+              <div class="custom-select">
+                <select id="ctrl-language" aria-label="TTS Language">
+                  <option value="en">English</option>
+                  <option value="hi">Hindi (हिंदी)</option>
+                </select>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ---- Detection Controls ---- -->
+      <div class="glass-card">
+        <div class="card-header">
+          <h2><span class="icon">🎯</span> Detection Controls</h2>
+        </div>
+        <div class="card-body">
+          <div class="control-group">
+            <div class="slider-control">
+              <div class="slider-header">
+                <span class="slider-label">Confidence Threshold</span>
+                <span class="slider-value" id="conf-val">0.80</span>
+              </div>
+              <input type="range" id="ctrl-confidence" min="0.10" max="1.0" step="0.05" value="0.80" aria-label="Confidence Threshold">
+            </div>
+
+            <div class="slider-control">
+              <div class="slider-header">
+                <span class="slider-label">Urgent Distance</span>
+                <span class="slider-value" id="urgent-val">0.8 m</span>
+              </div>
+              <input type="range" id="ctrl-urgent" min="0.3" max="2.0" step="0.1" value="0.8" aria-label="Urgent Distance Threshold">
+            </div>
+
+            <div class="slider-control">
+              <div class="slider-header">
+                <span class="slider-label">Warning Distance</span>
+                <span class="slider-value" id="warning-val">1.5 m</span>
+              </div>
+              <input type="range" id="ctrl-warning" min="0.5" max="3.0" step="0.1" value="1.5" aria-label="Warning Distance Threshold">
+            </div>
+
+            <div class="select-control">
+              <span class="select-label">YOLO Model</span>
+              <div class="custom-select">
+                <select id="ctrl-model" aria-label="YOLO Model">
+                  <option value="yolov8x.pt">YOLOv8x (Accurate)</option>
+                  <option value="yolov8n.pt">YOLOv8n (Fast)</option>
+                </select>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ---- Feature Toggles ---- -->
+      <div class="glass-card">
+        <div class="card-header">
+          <h2><span class="icon">⚙️</span> Features</h2>
+        </div>
+        <div class="card-body">
+          <div class="control-group">
+            <div class="toggle-row">
+              <span class="toggle-label">Groq Vision</span>
+              <label class="toggle-switch" id="toggle-groq">
+                <input type="checkbox" id="ctrl-groq" checked aria-label="Toggle Groq Vision">
+                <span class="toggle-slider"></span>
+              </label>
+            </div>
+
+            <div class="slider-control" style="margin-top: 8px;">
+              <div class="slider-header">
+                <span class="slider-label">Groq Interval</span>
+                <span class="slider-value" id="groq-int-val">30 s</span>
+              </div>
+              <input type="range" id="ctrl-groq-interval" min="10" max="120" step="5" value="30" aria-label="Groq Trigger Interval">
+            </div>
+
+            <div class="toggle-row">
+              <span class="toggle-label">Local Display (cv2)</span>
+              <label class="toggle-switch" id="toggle-display">
+                <input type="checkbox" id="ctrl-display" checked aria-label="Toggle Local Display">
+                <span class="toggle-slider"></span>
+              </label>
+            </div>
+
+            <div class="toggle-row">
+              <span class="toggle-label">Mute All Audio</span>
+              <label class="toggle-switch" id="toggle-mute">
+                <input type="checkbox" id="ctrl-mute" aria-label="Mute All Audio">
+                <span class="toggle-slider"></span>
+              </label>
+            </div>
+          </div>
+        </div>
+      </div>
+
+    </aside>
+
+    <!-- ============================================================
+         Alert Log Panel (Bottom Full Width)
+         ============================================================ -->
+    <section class="alert-log-panel glass-card" aria-label="Voice Alert Activity Log">
+      <div class="card-header">
+        <h2><span class="icon">📋</span> Activity Log</h2>
+        <div class="alert-log-toolbar">
+          <button class="btn btn-accent" id="btn-replay" aria-label="Replay Last Alert">↻ Replay</button>
+          <button class="btn btn-danger" id="btn-clear-log" aria-label="Clear Log">✕ Clear</button>
+        </div>
+      </div>
+      <div class="card-body" style="padding: 0 18px 12px;">
+        <div class="log-container" id="log-container">
+          <div class="log-empty" id="log-empty">No alerts yet — start the navigation assistant to see activity</div>
+        </div>
+      </div>
+    </section>
+
+  </main>
+
+  <script src="app.js"></script>
+</body>
+</html>

@@ -1,0 +1,122 @@
+# ============================================================
+# AI Navigation Assistant — Configuration
+# ============================================================
+
+# --- Camera ---
+camera:
+  device_index: "http://192.0.0.4:8080/video"          # Webcam index or IP stream URL
+  frame_width: 320
+  frame_height: 240
+  fps: 30
+
+# --- Object Detection (YOLOv8) ---
+detection:
+  model_path: "yolov8x.pt"   # Change to yolov8n.pt for faster CPU inference
+  confidence_threshold: 0.80
+  min_bbox_area_ratio: 0.01   # Minimum bounding box area as fraction of frame (1%)
+  target_classes:             # COCO class names to detect (whitelist)
+    - person
+    - chair
+    - dining table
+    - car
+    - bicycle
+    - door
+    - stairs
+    - bench
+    - potted plant
+    - backpack
+    - handbag
+    - suitcase
+    - bottle
+    - cup
+    - laptop
+    - cell phone
+    - book
+    - umbrella
+    - dog
+    - cat
+    - bus
+    - truck
+    - motorcycle
+    - fire hydrant
+    - stop sign
+    - couch
+    - bed
+    - toilet
+    - tv
+
+# --- Depth Estimation (MiDaS) ---
+depth:
+  model_type: "MiDaS_small"   # Options: MiDaS_small, DPT_Hybrid, DPT_Large
+  temporal_smoothing_frames: 3  # Running average window for depth stability
+  calibration:
+    scale: 2.0                    # distance_m = scale / (depth_value + offset)
+    offset: 0.2                   # depth=1.0→1.7m, depth=0.7→2.2m, depth=0.5→2.9m, depth=0.3→4.0m, depth=0.1→6.7m(clamped 6m)
+    min_distance: 0.3           # Clamp minimum (meters)
+    max_distance: 6.0           # Clamp maximum (meters)
+
+# --- Object Tracking (ByteTrack) ---
+tracking:
+  alert_cooldown_seconds: 7.0   # Same track ID not re-announced within this window
+  re_announce_zone_change: false
+  re_announce_distance_change_threshold: 0.50  # 50% distance change triggers re-announce
+  min_tracked_frames: 5         # Object must be tracked this many frames before announcement
+  max_lost_frames: 90           # Remove track after this many lost frames
+
+# --- Direction Estimation ---
+direction:
+  left_boundary: 0.33           # 0–33% = LEFT
+  right_boundary: 0.66          # 66–100% = RIGHT
+                                 # 33–66% = CENTER
+
+# --- Decision Engine ---
+decision:
+  thresholds:
+    urgent: 2.0                 # < 2.0m → URGENT (very close)
+    warning: 4.0                # 2.0–4.0m → WARNING (close)
+    info: 6.0                   # 4.0–6.0m → INFO (nearby)
+                                 # > 6.0m → SILENT
+  max_simultaneous_alerts: 2
+  consecutive_frames_required: 3  # Multi-frame verification
+  distance_variance_threshold: 0.20  # ≤20% variance for distance stability
+  dynamic_obstacle_labels:       # These get +0.5 priority boost
+    - person
+    - car
+    - bicycle
+    - dog
+    - bus
+    - truck
+    - motorcycle
+
+# --- Voice / TTS ---
+voice:
+  default_language: "en"         # "en" or "hi"
+  pyttsx3_rate: 175              # Words per minute for English TTS
+  pyttsx3_volume: 1.0            # 0.0 to 1.0
+  gtts_lang: "hi"                # gTTS language code for Hindi
+  audio_temp_dir: "temp_audio"   # Temporary dir for gTTS mp3 files
+  queue_max_size: 10             # Max queued messages
+
+# --- Groq API ---
+groq:
+  model: "meta-llama/llama-4-scout-17b-16e-instruct"  # Groq model with vision support
+  auto_trigger_interval_seconds: 30  # Auto scene description every N seconds
+  max_tokens: 300
+  temperature: 0.3
+  enabled: true                      # Set to false to disable Groq entirely
+
+# --- Display ---
+display:
+  show_window: true              # Show annotated video window (for sighted debug)
+  window_name: "AI Navigation Assistant"
+  annotation_font_scale: 0.5
+  colors:
+    urgent: [0, 0, 255]          # Red (BGR)
+    warning: [0, 165, 255]       # Orange (BGR)
+    info: [0, 255, 0]            # Green (BGR)
+
+# --- Logging ---
+logging:
+  level: "INFO"                  # DEBUG, INFO, WARNING, ERROR
+  log_to_file: false
+  log_file: "nav_assistant.log"
