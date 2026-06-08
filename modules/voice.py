@@ -302,13 +302,19 @@ class VoiceEngine:
         """
         Speak Hindi text.
 
-        Tries espeak-ng (offline) first. Falls back to gTTS (online).
+        Tries gTTS (natural voice, requires internet) first.
+        Falls back to espeak-ng (offline) if available.
         If both fail, speaks the text with the English engine.
         """
-        if self._hindi_mode == "espeak":
+        if self._hindi_mode == "gtts" or self._hindi_mode == "espeak":
+            if self._speak_hindi_gtts(text):
+                return
+
+        if self._hindi_voice_id:
             self._speak_hindi_espeak(text)
         else:
-            self._speak_hindi_gtts(text)
+            log.warning("No Hindi TTS backend available, falling back to English")
+            self._speak_english(text)
 
     def _speak_hindi_espeak(self, text: str):
         """Speak Hindi using pyttsx3 with espeak-ng Hindi voice (fully offline)."""
