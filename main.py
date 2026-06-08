@@ -254,7 +254,8 @@ def main():
             language = voice_engine.get_language()
             for alert in alerts:
                 message = alert.get_message(language)
-                voice_engine.speak(message, language)
+                                is_urgent = alert.level == "urgent"
+                    voice_engine.speak(message, language, urgent=is_urgent)
                 main_logger.info(
                     f"[{alert.level.upper()}] {message} "
                     f"(dist={alert.tracked_object.get('distance_m', '?'):.1f}m, "
@@ -307,9 +308,14 @@ def main():
                 main_logger.info("Quit command received")
                 break
 
-            elif key == ord("h"):  # Toggle language
-                new_lang = voice_engine.toggle_language()
-                main_logger.info(f"Language toggled to: {new_lang}")
+            elif key == ord("h"):  # Toggle language (with cooldown guard)
+                now = time.time()
+                if now - last_lang_toggle_time >= LANG_TOGGLE_COOLDOWN:
+                    last_lang_toggle_time = now
+                    new_lang = voice_engine.toggle_language()
+                    main_logger.info(f"Language toggled to: {new_lang}")
+                else:
+                    main_logger.debug("Language toggle ignored -- cooldown active")
 
             elif key == ord("d"):  # LM Studio scene description
                 main_logger.info("Manual scene description triggered")
