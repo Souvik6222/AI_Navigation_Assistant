@@ -16,12 +16,21 @@ import time
 import urllib.request
 import urllib.error
 
+from modules.prompts import (
+    SYSTEM_PROMPT_EN,
+    SYSTEM_PROMPT_HI,
+    SCENE_DESCRIPTION_PROMPT_EN,
+    SCENE_DESCRIPTION_PROMPT_HI,
+    STARTUP_PROMPT_EN,
+    STARTUP_PROMPT_HI,
+)
+
 from utils.logger import get_logger
 
 log = get_logger("lm_studio")
 
-# ---- Prompts ----
-
+# ---- Prompts (see prompts.py) ----
+# Prompts moved to modules/prompts.py
 SYSTEM_PROMPT = """You are a compact navigation assistant AI for visually impaired users.
 You receive structured object detection data (JSON) and must output a short voice instruction.
 
@@ -179,11 +188,8 @@ class LMStudioClient:
             return self._fallback_greeting(language)
 
         try:
-            lang_name = "Hindi" if language == "hi" else "English"
-            prompt = STARTUP_PROMPT.format(language=lang_name)
-            system = SYSTEM_PROMPT.format(language=lang_name)
-
-            result = self._call_api(system_prompt=system, user_prompt=prompt)
+            system, scene_prompt, start_prompt = self._get_prompts(language)
+            result = self._call_api(system_prompt=system, user_prompt=start_prompt)
             if result:
                 log.info(f"LM Studio startup greeting: {result}")
                 return result
@@ -212,12 +218,8 @@ class LMStudioClient:
                 indent=2,
             )
 
-            lang_name = "Hindi" if language == "hi" else "English"
-            user_prompt = SCENE_DESCRIPTION_PROMPT.format(
-                detections_json=det_json,
-                language=lang_name,
-            )
-            system = SYSTEM_PROMPT.format(language=lang_name)
+            system, scene_prompt_template, _ = self._get_prompts(language)
+            user_prompt = scene_prompt_template.format(detections_json=det_json)
 
             log.info("Sending scene description request to LM Studio...")
             result = self._call_api(system_prompt=system, user_prompt=user_prompt)
@@ -237,6 +239,12 @@ class LMStudioClient:
                     else "Scene description unavailable."
                 )
                 self._voice_engine.speak(fallback, language)
+
+    @staticmethod
+    def _get_prompts(language: str) -> tuple:
+        if language == "hi":
+            return SYSTEM_PROMPT_HI, SCENE_DESCRIPTION_PROMPT_HI, STARTUP_PROMPT_HI
+        return SYSTEM_PROMPT_EN, SCENE_DESCRIPTION_PROMPT_EN, STARTUP_PROMPT_EN
 
     def _call_api(self, system_prompt: str, user_prompt: str) -> str | None:
         """
