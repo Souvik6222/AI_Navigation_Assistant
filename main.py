@@ -9,7 +9,7 @@
 # Keyboard shortcuts:
 #   Q / ESC  — Quit
 #   H        — Toggle language (English ↔ Hindi)
-#   D        — Trigger Claude scene description
+# LM Studio scene description
 #
 # Usage:
 #   python main.py
@@ -34,7 +34,7 @@ from modules.tracker import ObjectTracker
 from modules.direction import get_direction
 from modules.decision_engine import DecisionEngine
 from modules.voice import VoiceEngine
-from modules.claude_client import ClaudeClient
+from modules.lm_studio_client import LMStudioClient
 
 log = get_logger("main")
 
@@ -80,7 +80,7 @@ def parse_args() -> argparse.Namespace:
         help="Disable the video display window",
     )
     parser.add_argument(
-        "--no-groq",
+        "--no-llm",
         action="store_true",
         help="Disable Groq API integration",
     )
@@ -107,8 +107,8 @@ def apply_overrides(config: dict, args: argparse.Namespace) -> dict:
     if args.no_display:
         config.setdefault("display", {})["show_window"] = False
 
-    if args.no_groq:
-        config.setdefault("groq", {})["enabled"] = False
+    if args.no_llm:
+        config.setdefault("lm_studio", {})["enabled"] = False
 
     return config
 
@@ -152,9 +152,9 @@ def main():
     voice_engine = VoiceEngine(config)
     voice_engine.start()
 
-    # 6. Claude Client
-    claude_client = ClaudeClient(config)
-    claude_client.set_voice_engine(voice_engine)
+    # LM Studio Client
+    lm_client = LMStudioClient(config)
+    lm_client.set_voice_engine(voice_engine)
 
     # Direction config
     dir_config = config.get("direction", {})
@@ -191,7 +191,7 @@ def main():
 
     # ---- Startup greeting ----
     language = voice_engine.get_language()
-    greeting = claude_client.get_startup_greeting(language)
+    greeting = lm_client.get_startup_greeting(language)
     if greeting:
         main_logger.info(f"Startup greeting: {greeting}")
         voice_engine.speak(greeting, language)
@@ -201,7 +201,7 @@ def main():
     fps_start_time = time.time()
     current_fps = 0.0
 
-    # ---- Last annotated state (for Claude) ----
+    # LM Studio) ----
     last_frame_base64 = ""
     last_detections = []
 
@@ -277,22 +277,22 @@ def main():
                 language=language,
                 fps=current_fps,
                 num_objects=len(tracked_objects),
-                groq_status=claude_client.get_status(),
+                groq_status=lm_client.get_status(),
             )
 
             # ---- 10. Display ----
             if show_window:
                 cv2.imshow(window_name, annotated_frame)
 
-            # ---- 11. Store for Claude ----
+            # LM Studio ----
             last_detections = detections
-            # Only encode frame for Claude when needed (expensive)
+            # LM Studio when needed (expensive)
 
-            # ---- 12. Auto-trigger Claude ----
-            if claude_client.should_auto_trigger() and len(detections) > 0:
+            # LM Studio ----
+            if lm_client.should_auto_trigger() and len(detections) > 0:
                 frame_b64 = frame_to_base64(annotated_frame)
-                claude_client.describe_scene_async(frame_b64, detections, language)
-                claude_client.mark_triggered()
+                lm_client.describe_scene_async(frame_b64, detections, language)
+                lm_client.mark_triggered()
 
             # ---- 13. Keyboard input ----
             key = cv2.waitKey(1) & 0xFF
@@ -305,11 +305,11 @@ def main():
                 new_lang = voice_engine.toggle_language()
                 main_logger.info(f"Language toggled to: {new_lang}")
 
-            elif key == ord("d"):  # Claude scene description
+            elif key == ord("d"):  # LM Studio scene description
                 main_logger.info("Manual scene description triggered")
                 frame_b64 = frame_to_base64(annotated_frame)
-                claude_client.describe_scene_async(frame_b64, detections, language)
-                claude_client.mark_triggered()
+                lm_client.describe_scene_async(frame_b64, detections, language)
+                lm_client.mark_triggered()
 
             # ---- FPS calculation ----
             fps_counter += 1
