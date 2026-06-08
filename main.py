@@ -176,6 +176,12 @@ def main():
 
     # ---- Open webcam ----
     main_logger.info(f"Opening camera (index={cam_index})...")
+    # Suppress harmless MJPEG decoder warnings from IP camera streams
+    os.environ.setdefault("OPENCV_LOG_LEVEL", "0")
+    try:
+        cv2.setLogLevel(0)
+    except AttributeError:
+        pass
     cap = cv2.VideoCapture(cam_index)
 
     if not cap.isOpened():
