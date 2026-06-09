@@ -34,6 +34,7 @@ from modules.tracker import ObjectTracker
 from modules.direction import get_direction
 from modules.decision_engine import DecisionEngine
 from modules.voice import VoiceEngine
+from modules.camera import CameraStream
 from modules.lm_studio_client import LMStudioClient
 
 log = get_logger("main")
@@ -182,18 +183,17 @@ def main():
         cv2.setLogLevel(0)
     except AttributeError:
         pass
-    cap = cv2.VideoCapture(cam_index)
 
-    if not cap.isOpened():
+    cam = CameraStream(cam_index, frame_width, frame_height)
+
+    if not cam.is_opened():
         main_logger.error("Failed to open webcam! Check camera connection.")
         voice_engine.speak("Camera not found. Please check your webcam connection.", "en")
         voice_engine.stop()
         sys.exit(1)
 
-    cap.set(cv2.CAP_PROP_FRAME_WIDTH, frame_width)
-    cap.set(cv2.CAP_PROP_FRAME_HEIGHT, frame_height)
-
-    main_logger.info(f"Camera opened — {frame_width}x{frame_height}")
+    cam.start()
+    main_logger.info(f"Camera opened — {frame_width}x{frame_height} (async reader)")
 
     # ---- Startup greeting ----
     language = voice_engine.get_language()
@@ -221,7 +221,7 @@ def main():
             loop_start = time.time()
 
             # ---- 1. Capture frame ----
-            ret, frame = cap.read()
+            ret, frame = cam.read()
             if not ret:
                 main_logger.warning("Failed to read frame from webcam")
                 continue
@@ -339,7 +339,7 @@ def main():
     finally:
         # ---- Cleanup ----
         main_logger.info("Shutting down...")
-        cap.release()
+        cam.stop()
         cv2.destroyAllWindows()
         voice_engine.stop()
         main_logger.info("AI Navigation Assistant stopped. Goodbye!")
