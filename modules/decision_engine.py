@@ -2,6 +2,9 @@
 # modules/decision_engine.py — Rule-based navigation decision maker
 # ============================================================
 
+import time
+from collections import defaultdict
+
 from utils.logger import get_logger
 
 log = get_logger("decision")
@@ -122,10 +125,16 @@ class DecisionEngine:
         # Reference to tracker for variance checks
         self._tracker = None
 
+        # Category-level cooldown: tracks last announcement time per label only.
+        # Keyed by label alone (not direction) so that zone-boundary jitter
+        # between LEFT/CENTER/RIGHT cannot bypass the cooldown.
+        self._category_last_announced: dict = {}   # key: label → timestamp
+        self._category_cooldown: float = dec_config.get("category_cooldown_seconds", 8.0)
+
         log.info(
             f"Decision engine ready — urgent<{self.urgent_threshold}m, "
             f"warning<{self.warning_threshold}m, info<{self.info_threshold}m, "
-            f"max_alerts={self.max_alerts}"
+            f"max_alerts={self.max_alerts}, category_cooldown={self._category_cooldown}s"
         )
 
     def set_tracker(self, tracker):
@@ -136,24 +145,29 @@ class DecisionEngine:
         """
         Evaluate tracked objects and generate prioritized navigation alerts.
 
+        Applies three anti-spam mechanisms:
+          1. Per-object tracker cooldown (should_announce from tracker)
+          2. Multi-frame + distance stability verification
+          3. Category-level cooldown: (label, direction) pair cannot repeat
+             within category_cooldown_seconds regardless of track ID
+          4. Same-class spatial grouping: multiple objects of the same label
+             in the same direction are merged into a single "Multiple X" alert
+
         Args:
             tracked_objects: List of tracked object dicts from tracker.update().
 
         Returns:
             List of Alert objects, sorted by priority, max 2 items.
         """
-        candidates = []
+        now = time.time()
 
+        # ---- Step 1: Basic filtering (per-object checks) ----
+        valid_objects = []
         for obj in tracked_objects:
-            # Only consider objects that tracker says should be announced
             if not obj.get("should_announce", False):
                 continue
-
-            # Multi-frame verification
             if obj.get("tracked_frames", 0) < self.consecutive_frames:
                 continue
-
-            # Distance stability check
             if self._tracker is not None:
                 variance = self._tracker.get_distance_variance(obj.get("track_id", -1))
                 if variance > self.distance_variance_threshold:
@@ -162,67 +176,119 @@ class DecisionEngine:
                         f"distance variance {variance:.2f} > {self.distance_variance_threshold}"
                     )
                     continue
+            valid_objects.append(obj)
 
-            distance = obj.get("distance_m", 999.0)
-            direction = obj.get("direction", "CENTER")
-            label = obj.get("label", "obstacle")
+        # ---- Step 2: Spatial grouping — group by (label, direction) ----
+        # key: (label, direction) → list of objects in that group
+        groups: dict = defaultdict(list)
+        for obj in valid_objects:
+            key = (obj.get("label", "obstacle"), obj.get("direction", "CENTER"))
+            groups[key].append(obj)
 
-            # Determine alert level and generate messages
-            alert = self._create_alert(label, distance, direction, obj)
+        # ---- Step 3: Build one alert per group ----
+        candidates = []
+        for (label, direction), group_objs in groups.items():
+            # Category-level cooldown check (keyed by label only — ignores direction
+            # to prevent zone-boundary jitter from triggering a repeat announcement)
+            last_time = self._category_last_announced.get(label, 0.0)
+            if (now - last_time) < self._category_cooldown:
+                log.debug(
+                    f"Category cooldown active for '{label}' — "
+                    f"{self._category_cooldown - (now - last_time):.1f}s remaining"
+                )
+                continue
+
+            # Use the closest object in the group as the representative
+            rep_obj = min(group_objs, key=lambda o: o.get("distance_m", 999.0))
+            distance = rep_obj.get("distance_m", 999.0)
+            count = len(group_objs)
+
+            # Build alert with optional "Multiple X" prefix for groups > 1
+            alert = self._create_alert(
+                label=label,
+                distance=distance,
+                direction=direction,
+                obj=rep_obj,
+                count=count,
+            )
             if alert is not None:
                 candidates.append(alert)
 
-        # Sort by priority (highest first) and return top N
+        # ---- Step 4: Sort + limit + record category timestamps ----
         candidates.sort(key=lambda a: a.priority_score, reverse=True)
-        return candidates[: self.max_alerts]
+        final = candidates[: self.max_alerts]
+
+        for alert in final:
+            label_key = alert.tracked_object.get("label", "obstacle")
+            self._category_last_announced[label_key] = now
+
+        return final
 
     def _create_alert(
-        self, label: str, distance: float, direction: str, obj: dict
+        self,
+        label: str,
+        distance: float,
+        direction: str,
+        obj: dict,
+        count: int = 1,
     ) -> Alert | None:
         """
-        Create an alert for a single object based on distance rules.
+        Create an alert for a single object or a grouped set of same-class objects.
 
-        Returns None for SILENT level (distance > info_threshold).
+        Args:
+            label:     COCO class name (e.g. "chair").
+            distance:  Closest distance in the group (meters).
+            direction: Shared direction of the group.
+            obj:       Representative object dict (closest one in group).
+            count:     Number of objects in this group (1 = single object).
+
+        Returns:
+            Alert instance, or None if SILENT (distance > info_threshold).
         """
-        # Calculate priority score
-        # Base: inverse distance (closer = higher)
+        # ---- Priority score ----
         priority = 10.0 / max(distance, 0.1)
 
-        # Bonus for CENTER direction
         if direction == "CENTER":
             priority += 2.0
-
-        # Bonus for dynamic obstacles
         if label in self.dynamic_labels:
             priority += 0.5
 
-        # Determine level and messages
+        # ---- Build message prefix (singular vs multiple) ----
         en_dir = _ENGLISH_DIRECTIONS.get(direction, "ahead")
         hi_label = _HINDI_LABELS.get(label, label)
         hi_dir = _HINDI_DIRECTIONS.get(direction, "aage")
 
+        if count > 1:
+            # Grouped: "Multiple chairs ahead"
+            label_en = f"Multiple {label}s"
+            label_hi = f"Kai {hi_label}"
+        else:
+            label_en = label.capitalize()
+            label_hi = hi_label.capitalize()
+
+        # ---- Alert level ----
         if distance < self.urgent_threshold:
             level = "urgent"
-            message_en = f"{label.capitalize()} very close {en_dir}."
-            message_hi = f"{hi_label} bahut paas {hi_dir}."
+            message_en = f"{label_en} very close {en_dir}."
+            message_hi = f"{label_hi} bahut paas {hi_dir}."
             priority += 20.0  # Massive boost for urgent
 
         elif distance < self.warning_threshold:
             level = "warning"
-            message_en = f"{label.capitalize()} close {en_dir}."
-            message_hi = f"{hi_label} paas {hi_dir}."
+            message_en = f"{label_en} close {en_dir}."
+            message_hi = f"{label_hi} paas {hi_dir}."
             priority += 5.0
 
         elif distance < self.info_threshold:
             level = "info"
-            message_en = f"{label.capitalize()} nearby {en_dir}."
-            message_hi = f"{hi_label} nazdeek {hi_dir}."
+            message_en = f"{label_en} nearby {en_dir}."
+            message_hi = f"{label_hi} nazdeek {hi_dir}."
 
         else:
             # SILENT — no alert
             return None
 
-        # Tag object with alert level for annotation
+        # Tag representative object with alert level for frame annotation
         obj["alert_level"] = level
 
         return Alert(
