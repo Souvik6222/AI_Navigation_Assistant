@@ -84,20 +84,37 @@ class VoiceEngine:
         self._cleanup_temp_files()
         log.info("Voice engine stopped")
 
-    def speak(self, message: str, language: str | None = None):
+    def speak(self, message: str, language: str | None = None, urgent: bool = False):
         """
         Enqueue a message for TTS playback (non-blocking).
 
-        If the queue is full, the oldest message is discarded to make room.
+        If urgent=True, the queue is cleared of all pending non-urgent
+        messages first so the urgent alert plays immediately.
+
+        If the queue is full (non-urgent), the oldest message is discarded.
 
         Args:
-            message: Text to speak.
+            message:  Text to speak.
             language: Language override ("en" or "hi"). Uses current language if None.
+            urgent:   If True, clears stale messages from queue before enqueuing.
         """
         lang = language or self._language
+        item = {"text": message, "lang": lang, "urgent": urgent}
+
+        if urgent:
+            # Wipe the queue of all pending messages so urgent alert plays NOW
+            cleared = 0
+            while not self._queue.empty():
+                try:
+                    self._queue.get_nowait()
+                    cleared += 1
+                except queue.Empty:
+                    break
+            if cleared:
+                log.debug(f"Urgent alert: cleared {cleared} stale messages from queue")
 
         try:
-            self._queue.put_nowait({"text": message, "lang": lang})
+            self._queue.put_nowait(item)
         except queue.Full:
             # Discard oldest and add new
             try:
@@ -105,7 +122,7 @@ class VoiceEngine:
             except queue.Empty:
                 pass
             try:
-                self._queue.put_nowait({"text": message, "lang": lang})
+                self._queue.put_nowait(item)
             except queue.Full:
                 log.warning(f"Voice queue full, dropping message: {message[:50]}")
 

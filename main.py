@@ -9,7 +9,7 @@
 # Keyboard shortcuts:
 #   Q / ESC  — Quit
 #   H        — Toggle language (English ↔ Hindi)
-#   D        — Trigger Claude scene description
+#   D        — Trigger LM Studio scene description
 #
 # Usage:
 #   python main.py
@@ -34,7 +34,7 @@ from modules.tracker import ObjectTracker
 from modules.direction import get_direction
 from modules.decision_engine import DecisionEngine
 from modules.voice import VoiceEngine
-from modules.claude_client import ClaudeClient
+from modules.lm_studio_client import LMStudioClient
 
 log = get_logger("main")
 
@@ -80,9 +80,9 @@ def parse_args() -> argparse.Namespace:
         help="Disable the video display window",
     )
     parser.add_argument(
-        "--no-groq",
+        "--no-llm",
         action="store_true",
-        help="Disable Groq API integration",
+        help="Disable local LM Studio LLM brain",
     )
     parser.add_argument(
         "--config",
@@ -107,8 +107,8 @@ def apply_overrides(config: dict, args: argparse.Namespace) -> dict:
     if args.no_display:
         config.setdefault("display", {})["show_window"] = False
 
-    if args.no_groq:
-        config.setdefault("groq", {})["enabled"] = False
+    if args.no_llm:
+        config.setdefault("lm_studio", {})["enabled"] = False
 
     return config
 
@@ -152,9 +152,9 @@ def main():
     voice_engine = VoiceEngine(config)
     voice_engine.start()
 
-    # 6. Claude Client
-    claude_client = ClaudeClient(config)
-    claude_client.set_voice_engine(voice_engine)
+    # 6. LM Studio Client (local LLM brain)
+    lm_client = LMStudioClient(config)
+    lm_client.set_voice_engine(voice_engine)
 
     # Direction config
     dir_config = config.get("direction", {})
@@ -176,6 +176,13 @@ def main():
 
     # ---- Open webcam ----
     main_logger.info(f"Opening camera (index={cam_index})...")
+    # Suppress harmless MJPEG decoder warnings from IP camera streams
+    # cv2.setLogLevel is not available in all OpenCV builds; use env var instead
+    os.environ.setdefault("OPENCV_LOG_LEVEL", "0")
+    try:
+        cv2.setLogLevel(0)  # type: ignore[attr-defined]
+    except AttributeError:
+        pass  # Older OpenCV builds don't expose setLogLevel — env var covers it
     cap = cv2.VideoCapture(cam_index)
 
     if not cap.isOpened():
@@ -191,7 +198,7 @@ def main():
 
     # ---- Startup greeting ----
     language = voice_engine.get_language()
-    greeting = claude_client.get_startup_greeting(language)
+    greeting = lm_client.get_startup_greeting(language)
     if greeting:
         main_logger.info(f"Startup greeting: {greeting}")
         voice_engine.speak(greeting, language)
@@ -201,7 +208,11 @@ def main():
     fps_start_time = time.time()
     current_fps = 0.0
 
-    # ---- Last annotated state (for Claude) ----
+    # ---- Language toggle cooldown (prevents double-fire from key repeat) ----
+    last_lang_toggle_time = 0.0
+    LANG_TOGGLE_COOLDOWN = 2.0  # seconds
+
+    # ---- Last annotated state (for LM Studio) ----
     last_frame_base64 = ""
     last_detections = []
 
@@ -248,7 +259,8 @@ def main():
             language = voice_engine.get_language()
             for alert in alerts:
                 message = alert.get_message(language)
-                voice_engine.speak(message, language)
+                is_urgent = alert.level == "urgent"
+                voice_engine.speak(message, language, urgent=is_urgent)
                 main_logger.info(
                     f"[{alert.level.upper()}] {message} "
                     f"(dist={alert.tracked_object.get('distance_m', '?'):.1f}m, "
@@ -277,22 +289,22 @@ def main():
                 language=language,
                 fps=current_fps,
                 num_objects=len(tracked_objects),
-                groq_status=claude_client.get_status(),
+                groq_status=lm_client.get_status(),
             )
 
             # ---- 10. Display ----
             if show_window:
                 cv2.imshow(window_name, annotated_frame)
 
-            # ---- 11. Store for Claude ----
+            # ---- 11. Store for LM Studio ----
             last_detections = detections
-            # Only encode frame for Claude when needed (expensive)
+            # Only encode frame when needed (expensive)
 
-            # ---- 12. Auto-trigger Claude ----
-            if claude_client.should_auto_trigger() and len(detections) > 0:
+            # ---- 12. Auto-trigger LM Studio scene description ----
+            if lm_client.should_auto_trigger() and len(detections) > 0:
                 frame_b64 = frame_to_base64(annotated_frame)
-                claude_client.describe_scene_async(frame_b64, detections, language)
-                claude_client.mark_triggered()
+                lm_client.describe_scene_async(frame_b64, detections, language)
+                lm_client.mark_triggered()
 
             # ---- 13. Keyboard input ----
             key = cv2.waitKey(1) & 0xFF
@@ -301,15 +313,20 @@ def main():
                 main_logger.info("Quit command received")
                 break
 
-            elif key == ord("h"):  # Toggle language
-                new_lang = voice_engine.toggle_language()
-                main_logger.info(f"Language toggled to: {new_lang}")
+            elif key == ord("h"):  # Toggle language (with cooldown guard)
+                now = time.time()
+                if now - last_lang_toggle_time >= LANG_TOGGLE_COOLDOWN:
+                    last_lang_toggle_time = now
+                    new_lang = voice_engine.toggle_language()
+                    main_logger.info(f"Language toggled to: {new_lang}")
+                else:
+                    main_logger.debug("Language toggle ignored — cooldown active")
 
-            elif key == ord("d"):  # Claude scene description
+            elif key == ord("d"):  # LM Studio scene description
                 main_logger.info("Manual scene description triggered")
                 frame_b64 = frame_to_base64(annotated_frame)
-                claude_client.describe_scene_async(frame_b64, detections, language)
-                claude_client.mark_triggered()
+                lm_client.describe_scene_async(frame_b64, detections, language)
+                lm_client.mark_triggered()
 
             # ---- FPS calculation ----
             fps_counter += 1
