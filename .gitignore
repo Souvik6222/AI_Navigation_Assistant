@@ -22,3 +22,7 @@ temp_audio/
 .DS_Store
 Thumbs.db
 desktop.ini
+
+# Session exports
+session-*.md
+neo/exports/
