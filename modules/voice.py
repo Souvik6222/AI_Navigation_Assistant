@@ -339,18 +339,20 @@ class VoiceEngine:
             self._pyttsx3_engine.setProperty("rate", self._rate)
 
         except Exception as e:
-            log.warning(f"espeak Hindi failed, trying gTTS: {e}")
-            self._speak_hindi_gtts(text)
+            log.warning(f"espeak Hindi failed: {e}")
+            self._speak_english(text)
 
-    def _speak_hindi_gtts(self, text: str):
-        """Speak Hindi text using gTTS + pygame (requires internet)."""
+    def _speak_hindi_gtts(self, text: str) -> bool:
+        """Speak Hindi text using gTTS + pygame (requires internet).
+
+        Returns True if speech was successful, False otherwise.
+        """
         if not self._pygame_initialized:
             self._init_pygame()
 
         if not self._pygame_initialized:
             log.warning(f"pygame unavailable, cannot speak Hindi: {text}")
-            self._speak_english(text)
-            return
+            return False
 
         try:
             from gtts import gTTS
@@ -374,12 +376,14 @@ class VoiceEngine:
             except OSError:
                 pass
 
+            return True
+
         except ImportError:
             log.error("gTTS not installed — Hindi TTS unavailable")
             self._speak_english(text)
         except Exception as e:
             log.error(f"Hindi gTTS error: {e}")
-            self._speak_english(text)
+            return False
 
     def _speak_with_fresh_engine(self, text: str):
         """
