@@ -2,6 +2,10 @@
 # AI Navigation Assistant — Configuration
 # ============================================================
 
+# --- Performance ---
+performance:
+  process_every_n_frames: 3     # Only run AI pipeline every Nth frame (1 = every frame)
+
 # --- Camera ---
 camera:
   device_index: "http://192.0.0.4:8080/video"          # Webcam index or IP stream URL
