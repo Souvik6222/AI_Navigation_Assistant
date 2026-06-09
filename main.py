@@ -228,64 +228,79 @@ def main():
 
             # Resize to standard dimensions
             frame = resize_frame(frame, frame_width, frame_height)
+            frame_index += 1
 
-            # ---- 2. YOLOv8 Detection ----
-            detections = detector.detect(frame)
-
-            # ---- 3. MiDaS Depth Estimation ----
-            depth_map = depth_estimator.estimate(frame)
-
-            # ---- 4. Enrich detections with direction + distance ----
-            for det in detections:
-                # Direction
-                det["direction"] = get_direction(
-                    det["center_x"], frame_width, left_boundary, right_boundary
-                )
-                # Distance
-                det["distance_m"] = depth_estimator.get_distance(depth_map, det["bbox"])
-
-            # ---- 5. Update tracker ----
-            tracked_objects = tracker.update(detections, frame_width)
-
-            # ---- 6. Decision engine → alerts ----
-            alerts = decision_engine.evaluate(tracked_objects)
-
-            # ---- 7. Send alerts to voice engine ----
-            language = voice_engine.get_language()
-            for alert in alerts:
-                message = alert.get_message(language)
-                                is_urgent = alert.level == "urgent"
-                    voice_engine.speak(message, language, urgent=is_urgent)
-                main_logger.info(
-                    f"[{alert.level.upper()}] {message} "
-                    dist = alert.tracked_object.get('distance_m')
-                    dist_str = f"{dist:.1f}m" if isinstance(dist, (int, float)) else "?"
-                    f"(dist={dist_str}, "
-                    f"id={alert.tracked_object.get('track_id', '?')})"
-                )
-
-            # ---- 8. Annotate frame ----
-            # Set alert_level on all tracked objects for annotation colors
-            for obj in tracked_objects:
-                if "alert_level" not in obj:
-                    dist = obj.get("distance_m", 999)
-                    if dist < decision_engine.urgent_threshold:
-                        obj["alert_level"] = "urgent"
-                    elif dist < decision_engine.warning_threshold:
-                        obj["alert_level"] = "warning"
-                    elif dist < decision_engine.info_threshold:
-                        obj["alert_level"] = "info"
-                    else:
-                        obj["alert_level"] = "silent"
-
-            annotated_frame = annotate_frame(frame, tracked_objects)
-
+            # ---- Frame skip: only run AI on every Nth frame ----
+            if frame_index % process_every_n == 0:
+    
+                    # ---- 2. YOLOv8 Detection ----
+                detections = detector.detect(frame)
+    
+                # ---- 3. MiDaS Depth Estimation ----
+                depth_map = depth_estimator.estimate(frame)
+    
+                # ---- 4. Enrich detections with direction + distance ----
+                for det in detections:
+                    # Direction
+                    det["direction"] = get_direction(
+                        det["center_x"], frame_width, left_boundary, right_boundary
+                    )
+                    # Distance
+                    det["distance_m"] = depth_estimator.get_distance(depth_map, det["bbox"])
+    
+                # ---- 5. Update tracker ----
+                tracked_objects = tracker.update(detections, frame_width)
+    
+                # ---- 6. Decision engine → alerts ----
+                alerts = decision_engine.evaluate(tracked_objects)
+    
+                # ---- 7. Send alerts to voice engine ----
+                language = voice_engine.get_language()
+                for alert in alerts:
+                    message = alert.get_message(language)
+                                    is_urgent = alert.level == "urgent"
+                        voice_engine.speak(message, language, urgent=is_urgent)
+                    main_logger.info(
+                        f"[{alert.level.upper()}] {message} "
+                        dist = alert.tracked_object.get('distance_m')
+                        dist_str = f"{dist:.1f}m" if isinstance(dist, (int, float)) else "?"
+                        f"(dist={dist_str}, "
+                        f"id={alert.tracked_object.get('track_id', '?')})"
+                    )
+    
+                # ---- 8. Annotate frame ----
+                # Set alert_level on all tracked objects for annotation colors
+                for obj in tracked_objects:
+                    if "alert_level" not in obj:
+                        dist = obj.get("distance_m", 999)
+                        if dist < decision_engine.urgent_threshold:
+                            obj["alert_level"] = "urgent"
+                        elif dist < decision_engine.warning_threshold:
+                            obj["alert_level"] = "warning"
+                        elif dist < decision_engine.info_threshold:
+                            obj["alert_level"] = "info"
+                        else:
+                            obj["alert_level"] = "silent"
+    
+                annotated_frame = annotate_frame(frame, tracked_objects)
+    
+                    cached_tracked_objects = tracked_objects
+                    cached_annotated_frame = annotated_frame
+    
+                else:
+                    # Skipped frame: reuse cached annotations on the new frame
+                    annotated_frame = (
+                        annotate_frame(frame, cached_tracked_objects)
+                        if cached_tracked_objects
+                        else frame
+                    )
+    
             # ---- 9. Status bar ----
             annotated_frame = draw_status_bar(
                 annotated_frame,
                 language=language,
                 fps=current_fps,
-                num_objects=len(tracked_objects),
+                num_objects=len(cached_tracked_objects),
                 groq_status=lm_client.get_status(),
             )
 
