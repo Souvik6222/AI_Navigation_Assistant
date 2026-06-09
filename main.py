@@ -169,6 +169,7 @@ def main():
         cam_index = int(cam_index)
     frame_width = cam_config.get("frame_width", 640)
     frame_height = cam_config.get("frame_height", 480)
+    frame_rotation = cam_config.get("rotation", 0)
 
     # Display config
     display_config = config.get("display", {})
@@ -225,6 +226,13 @@ def main():
             if not ret:
                 main_logger.warning("Failed to read frame from webcam")
                 continue
+
+            # Rotate frame if needed (fix phone portrait orientation)
+            if frame_rotation != 0:
+                rot_map = {90: cv2.ROTATE_90_CLOCKWISE, -90: cv2.ROTATE_90_COUNTERCLOCKWISE, 180: cv2.ROTATE_180}
+                rot_code = rot_map.get(frame_rotation)
+                if rot_code is not None:
+                    frame = cv2.rotate(frame, rot_code)
 
             # Resize to standard dimensions
             frame = resize_frame(frame, frame_width, frame_height)

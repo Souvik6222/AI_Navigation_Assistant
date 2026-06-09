@@ -8,10 +8,12 @@ performance:
 
 # --- Camera ---
 camera:
-  device_index: "http://192.0.0.4:8080/video"          # Webcam index or IP stream URL
+  device_index: "http://192.168.153.197:8080/video"  # for mobile
+  # device_index: 0                     # Internal webcam
   frame_width: 320
   frame_height: 240
   fps: 30
+  rotation: -90                         # Rotate frame: 0, 90, -90, 180 (fix phone portrait)
 
 # --- Object Detection (YOLOv8) ---
 detection:
