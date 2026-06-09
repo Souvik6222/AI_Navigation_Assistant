@@ -100,11 +100,11 @@ voice:
 # --- LM Studio (Local LLM Brain) ---
 lm_studio:
   base_url: "http://127.0.0.1:1234/v1"          # LM Studio local server URL
-  model: "qwen2.5-coder-3b-instruct-128k"        # Model loaded in LM Studio
+  model: "qwen3.5-0.8b"                        # Model loaded in LM Studio
   max_tokens: 80                                 # Keep short for fast response
   temperature: 0.2                               # Low = more deterministic
   timeout_seconds: 8                             # Max wait per request
-  auto_trigger_interval_seconds: 5              # Auto scene description every N seconds
+  auto_trigger_interval_seconds: 30             # Auto scene description every N seconds
   use_structured_output: true                    # Force JSON schema output from LM Studio
   enabled: true                                  # Set to false to disable LLM brain
 
