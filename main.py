@@ -258,7 +258,9 @@ def main():
                     voice_engine.speak(message, language, urgent=is_urgent)
                 main_logger.info(
                     f"[{alert.level.upper()}] {message} "
-                    f"(dist={alert.tracked_object.get('distance_m', '?'):.1f}m, "
+                    dist = alert.tracked_object.get('distance_m')
+                    dist_str = f"{dist:.1f}m" if isinstance(dist, (int, float)) else "?"
+                    f"(dist={dist_str}, "
                     f"id={alert.tracked_object.get('track_id', '?')})"
                 )
 
