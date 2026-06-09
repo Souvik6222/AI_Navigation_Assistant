@@ -236,18 +236,16 @@ def main():
                     # ---- 2. YOLOv8 Detection ----
                 detections = detector.detect(frame)
     
-                # ---- 3. MiDaS Depth Estimation ----
-                depth_map = depth_estimator.estimate(frame)
-    
-                # ---- 4. Enrich detections with direction + distance ----
-                for det in detections:
-                    # Direction
-                    det["direction"] = get_direction(
-                        det["center_x"], frame_width, left_boundary, right_boundary
-                    )
-                    # Distance
-                    det["distance_m"] = depth_estimator.get_distance(depth_map, det["bbox"])
-    
+                # ---- 3. MiDaS Depth Estimation (conditional) ----
+                if len(detections) > 0:
+                    depth_map = depth_estimator.estimate(frame)
+                    for det in detections:
+                        # Direction
+                        det["direction"] = get_direction(
+                            det["center_x"], frame_width, left_boundary, right_boundary
+                        )
+                        # Distance
+                        det["distance_m"] = depth_estimator.get_distance(depth_map, det["bbox"])
                 # ---- 5. Update tracker ----
                 tracked_objects = tracker.update(detections, frame_width)
     
