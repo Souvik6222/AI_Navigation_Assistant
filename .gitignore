@@ -11,8 +11,9 @@ venv/
 # Environment variables / secrets
 .env
 
-# Large model weights (YOLO, etc.)
+# Large model weights (YOLO, etc.) — too large for GitHub (>100MB)
 *.pt
+*.onnx
 
 # Application logs and temp files
 *.log
