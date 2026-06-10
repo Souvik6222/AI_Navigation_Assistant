@@ -35,6 +35,7 @@ from modules.direction import get_direction
 from modules.decision_engine import DecisionEngine
 from modules.voice import VoiceEngine
 from modules.lm_studio_client import LMStudioClient
+from modules.camera import CameraStream
 
 log = get_logger("main")
 
@@ -174,27 +175,30 @@ def main():
     show_window = display_config.get("show_window", True)
     window_name = display_config.get("window_name", "AI Navigation Assistant")
 
-    # ---- Open webcam ----
-    main_logger.info(f"Opening camera (index={cam_index})...")
+    # Performance config
+    perf_config = config.get("performance", {})
+    process_every_n = max(1, perf_config.get("process_every_n_frames", 3))
+    main_logger.info(f"Frame skipping: processing every {process_every_n} frame(s)")
+
+    # ---- Open webcam (threaded async reader) ----
+    main_logger.info(f"Opening camera (source={cam_index})...")
     # Suppress harmless MJPEG decoder warnings from IP camera streams
-    # cv2.setLogLevel is not available in all OpenCV builds; use env var instead
     os.environ.setdefault("OPENCV_LOG_LEVEL", "0")
     try:
         cv2.setLogLevel(0)  # type: ignore[attr-defined]
     except AttributeError:
         pass  # Older OpenCV builds don't expose setLogLevel — env var covers it
-    cap = cv2.VideoCapture(cam_index)
 
-    if not cap.isOpened():
+    cam = CameraStream(cam_index, frame_width, frame_height)
+
+    if not cam.is_opened():
         main_logger.error("Failed to open webcam! Check camera connection.")
         voice_engine.speak("Camera not found. Please check your webcam connection.", "en")
         voice_engine.stop()
         sys.exit(1)
 
-    cap.set(cv2.CAP_PROP_FRAME_WIDTH, frame_width)
-    cap.set(cv2.CAP_PROP_FRAME_HEIGHT, frame_height)
-
-    main_logger.info(f"Camera opened — {frame_width}x{frame_height}")
+    cam.start()
+    main_logger.info(f"Camera opened — {frame_width}x{frame_height} (async reader)")
 
     # ---- Startup greeting ----
     language = voice_engine.get_language()
@@ -216,7 +220,16 @@ def main():
     last_frame_base64 = ""
     last_detections = []
 
-    main_logger.info("Pipeline running — press Q to quit, H to toggle language, D for scene description")
+    # ---- Frame counter for skipping ----
+    frame_index = 0
+
+    # ---- Cached state for skipped frames ----
+    cached_tracked_objects = []
+    cached_annotated_frame = None
+
+    main_logger.info(
+        f"Pipeline running — press Q to quit, H to toggle language, D for scene description"
+    )
 
     # ============================================================
     # MAIN LOOP
@@ -225,86 +238,96 @@ def main():
         while True:
             loop_start = time.time()
 
-            # ---- 1. Capture frame ----
-            ret, frame = cap.read()
-            if not ret:
-                main_logger.warning("Failed to read frame from webcam")
+            # ---- 1. Capture frame (async — always the latest) ----
+            ret, frame = cam.read()
+            if not ret or frame is None:
+                time.sleep(0.01)
                 continue
 
             # Resize to standard dimensions
             frame = resize_frame(frame, frame_width, frame_height)
+            frame_index += 1
 
-            # ---- 2. YOLOv8 Detection ----
-            detections = detector.detect(frame)
+            # ---- Frame skip: only run AI on every Nth frame ----
+            if frame_index % process_every_n == 0:
 
-            # ---- 3. MiDaS Depth Estimation ----
-            depth_map = depth_estimator.estimate(frame)
+                # ---- 2. YOLOv8 Detection ----
+                detections = detector.detect(frame)
 
-            # ---- 4. Enrich detections with direction + distance ----
-            for det in detections:
-                # Direction
-                det["direction"] = get_direction(
-                    det["center_x"], frame_width, left_boundary, right_boundary
+                # ---- 3. MiDaS Depth Estimation (CONDITIONAL) ----
+                # Only run the heavy depth model if objects were detected
+                if len(detections) > 0:
+                    depth_map = depth_estimator.estimate(frame)
+
+                    # ---- 4. Enrich detections with direction + distance ----
+                    for det in detections:
+                        det["direction"] = get_direction(
+                            det["center_x"], frame_width, left_boundary, right_boundary
+                        )
+                        det["distance_m"] = depth_estimator.get_distance(depth_map, det["bbox"])
+
+                # ---- 5. Update tracker ----
+                tracked_objects = tracker.update(detections, frame_width)
+                cached_tracked_objects = tracked_objects
+
+                # ---- 6. Decision engine → alerts ----
+                alerts = decision_engine.evaluate(tracked_objects)
+
+                # ---- 7. Send alerts to voice engine ----
+                language = voice_engine.get_language()
+                for alert in alerts:
+                    message = alert.get_message(language)
+                    is_urgent = alert.level == "urgent"
+                    voice_engine.speak(message, language, urgent=is_urgent)
+                    main_logger.info(
+                        f"[{alert.level.upper()}] {message} "
+                        f"(dist={alert.tracked_object.get('distance_m', '?'):.1f}m, "
+                        f"id={alert.tracked_object.get('track_id', '?')})"
+                    )
+
+                # ---- 8. Annotate frame ----
+                for obj in tracked_objects:
+                    if "alert_level" not in obj:
+                        dist = obj.get("distance_m", 999)
+                        if dist < decision_engine.urgent_threshold:
+                            obj["alert_level"] = "urgent"
+                        elif dist < decision_engine.warning_threshold:
+                            obj["alert_level"] = "warning"
+                        elif dist < decision_engine.info_threshold:
+                            obj["alert_level"] = "info"
+                        else:
+                            obj["alert_level"] = "silent"
+
+                annotated_frame = annotate_frame(frame, tracked_objects)
+                cached_annotated_frame = annotated_frame
+
+                # ---- 12. Auto-trigger LM Studio scene description ----
+                if lm_client.should_auto_trigger() and len(detections) > 0:
+                    frame_b64 = frame_to_base64(annotated_frame)
+                    lm_client.describe_scene_async(frame_b64, detections, language)
+                    lm_client.mark_triggered()
+
+            else:
+                # Skipped frame: reuse cached annotations on the new frame
+                annotated_frame = (
+                    annotate_frame(frame, cached_tracked_objects)
+                    if cached_tracked_objects
+                    else frame
                 )
-                # Distance
-                det["distance_m"] = depth_estimator.get_distance(depth_map, det["bbox"])
 
-            # ---- 5. Update tracker ----
-            tracked_objects = tracker.update(detections, frame_width)
-
-            # ---- 6. Decision engine → alerts ----
-            alerts = decision_engine.evaluate(tracked_objects)
-
-            # ---- 7. Send alerts to voice engine ----
+            # ---- 9. Status bar (always drawn) ----
             language = voice_engine.get_language()
-            for alert in alerts:
-                message = alert.get_message(language)
-                is_urgent = alert.level == "urgent"
-                voice_engine.speak(message, language, urgent=is_urgent)
-                main_logger.info(
-                    f"[{alert.level.upper()}] {message} "
-                    f"(dist={alert.tracked_object.get('distance_m', '?'):.1f}m, "
-                    f"id={alert.tracked_object.get('track_id', '?')})"
-                )
-
-            # ---- 8. Annotate frame ----
-            # Set alert_level on all tracked objects for annotation colors
-            for obj in tracked_objects:
-                if "alert_level" not in obj:
-                    dist = obj.get("distance_m", 999)
-                    if dist < decision_engine.urgent_threshold:
-                        obj["alert_level"] = "urgent"
-                    elif dist < decision_engine.warning_threshold:
-                        obj["alert_level"] = "warning"
-                    elif dist < decision_engine.info_threshold:
-                        obj["alert_level"] = "info"
-                    else:
-                        obj["alert_level"] = "silent"
-
-            annotated_frame = annotate_frame(frame, tracked_objects)
-
-            # ---- 9. Status bar ----
             annotated_frame = draw_status_bar(
                 annotated_frame,
                 language=language,
                 fps=current_fps,
-                num_objects=len(tracked_objects),
+                num_objects=len(cached_tracked_objects),
                 groq_status=lm_client.get_status(),
             )
 
-            # ---- 10. Display ----
+            # ---- 10. Display (always shown) ----
             if show_window:
                 cv2.imshow(window_name, annotated_frame)
-
-            # ---- 11. Store for LM Studio ----
-            last_detections = detections
-            # Only encode frame when needed (expensive)
-
-            # ---- 12. Auto-trigger LM Studio scene description ----
-            if lm_client.should_auto_trigger() and len(detections) > 0:
-                frame_b64 = frame_to_base64(annotated_frame)
-                lm_client.describe_scene_async(frame_b64, detections, language)
-                lm_client.mark_triggered()
 
             # ---- 13. Keyboard input ----
             key = cv2.waitKey(1) & 0xFF
@@ -325,7 +348,7 @@ def main():
             elif key == ord("d"):  # LM Studio scene description
                 main_logger.info("Manual scene description triggered")
                 frame_b64 = frame_to_base64(annotated_frame)
-                lm_client.describe_scene_async(frame_b64, detections, language)
+                lm_client.describe_scene_async(frame_b64, [], language)
                 lm_client.mark_triggered()
 
             # ---- FPS calculation ----
@@ -342,7 +365,7 @@ def main():
     finally:
         # ---- Cleanup ----
         main_logger.info("Shutting down...")
-        cap.release()
+        cam.stop()
         cv2.destroyAllWindows()
         voice_engine.stop()
         main_logger.info("AI Navigation Assistant stopped. Goodbye!")
