@@ -10,7 +10,7 @@ def get_direction(center_x: float, frame_width: int, left_boundary: float = 0.33
     The camera frame is divided into three equal vertical zones:
         [0 – 33%] → LEFT
         [33% – 66%] → CENTER
-        [66% – 100%] → RIGHT
+        [66% – 100%] → RIGHTz 
 
     Args:
         center_x: Horizontal center coordinate of the object's bounding box (pixels).
