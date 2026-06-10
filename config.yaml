@@ -2,6 +2,10 @@
 # AI Navigation Assistant — Configuration
 # ============================================================
 
+# --- Performance ---
+performance:
+  process_every_n_frames: 3     # Only run AI pipeline every Nth frame (1 = every frame)
+
 # --- Camera ---
 camera:
   device_index: "http://192.0.0.4:8080/video"          # Webcam index or IP stream URL
@@ -11,28 +15,16 @@ camera:
 
 # --- Object Detection (YOLOv8) ---
 detection:
-  model_path: "yolov8x.pt"   # Change to yolov8n.pt for faster CPU inference
+  model_path: "yolov8x.onnx"  # ONNX format for faster inference (exported from yolov8x.pt)
   confidence_threshold: 0.80
   min_bbox_area_ratio: 0.01   # Minimum bounding box area as fraction of frame (1%)
-  target_classes:             # COCO class names to detect (whitelist)
+  target_classes:             # Navigation-critical COCO classes only (trimmed for speed)
     - person
     - chair
     - dining table
     - car
     - bicycle
-    - door
-    - stairs
     - bench
-    - potted plant
-    - backpack
-    - handbag
-    - suitcase
-    - bottle
-    - cup
-    - laptop
-    - cell phone
-    - book
-    - umbrella
     - dog
     - cat
     - bus
@@ -41,9 +33,19 @@ detection:
     - fire hydrant
     - stop sign
     - couch
-    - bed
-    - toilet
+    - potted plant
+    # --- Personal items & everyday objects ---
+    - bottle
+    - cell phone
+    - cup
+    - backpack
+    - handbag
+    - suitcase
+    - laptop
+    - umbrella
+    - book
     - tv
+    - remote
 
 # --- Depth Estimation (MiDaS) ---
 depth:
