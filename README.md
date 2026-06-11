@@ -1,4 +1,4 @@
-# 🦯 AI Navigation Assistant for Visually Impaired People
+# 🦯 GuideSense: AI Navigation Assistant for Visually Impaired People
 
 A real-time AI-powered navigation assistant that uses a laptop webcam to detect objects, estimate distances, and deliver **bilingual (English + Hindi) voice guidance** to visually impaired users.
 
