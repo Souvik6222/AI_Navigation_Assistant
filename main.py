@@ -223,6 +223,9 @@ def main():
     detections = []
     annotated_frame = None
 
+    # Frame counter for skip logic
+    frame_index = 0
+
     # Language toggle cooldown (prevents double-fire from key repeat)
     last_lang_toggle_time = 0.0
     LANG_TOGGLE_COOLDOWN = 2.0
