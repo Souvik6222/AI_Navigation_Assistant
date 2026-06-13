@@ -10,7 +10,6 @@ venv/
 
 # Environment variables / secrets
 .env
-
 # Large model weights (YOLO, etc.) — too large for GitHub (>100MB)
 *.pt
 *.onnx
@@ -18,8 +17,11 @@ venv/
 # Application logs and temp files
 *.log
 temp_audio/
-
 # OS files
 .DS_Store
 Thumbs.db
 desktop.ini
+
+# Session exports
+session-*.md
+neo/exports/
