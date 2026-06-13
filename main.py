@@ -208,9 +208,27 @@ def main():
     fps_start_time = time.time()
     current_fps = 0.0
 
-    # LM Studio) ----
+    # Performance config
+    perf_config = config.get("performance", {})
+    process_every_n = max(1, perf_config.get("process_every_n_frames", 3))
+    main_logger.info(f"Frame skipping: processing every {process_every_n} frame(s)")
+
+    # LM Studio state
     last_frame_base64 = ""
     last_detections = []
+
+    # Cached state for skipped frames
+    cached_tracked_objects = []
+    cached_annotated_frame = None
+    detections = []
+    annotated_frame = None
+
+    # Frame counter for skip logic
+    frame_index = 0
+
+    # Language toggle cooldown (prevents double-fire from key repeat)
+    last_lang_toggle_time = 0.0
+    LANG_TOGGLE_COOLDOWN = 2.0
 
     main_logger.info("Pipeline running — press Q to quit, H to toggle language, D for scene description")
 
@@ -240,10 +258,10 @@ def main():
 
             # ---- Frame skip: only run AI on every Nth frame ----
             if frame_index % process_every_n == 0:
-    
-                    # ---- 2. YOLOv8 Detection ----
+
+                # ---- 2. YOLOv8 Detection ----
                 detections = detector.detect(frame)
-    
+
                 # ---- 3. MiDaS Depth Estimation (conditional) ----
                 if len(detections) > 0:
                     depth_map = depth_estimator.estimate(frame)
@@ -254,26 +272,28 @@ def main():
                         )
                         # Distance
                         det["distance_m"] = depth_estimator.get_distance(depth_map, det["bbox"])
+
                 # ---- 5. Update tracker ----
                 tracked_objects = tracker.update(detections, frame_width)
-    
+                cached_tracked_objects = tracked_objects
+
                 # ---- 6. Decision engine → alerts ----
                 alerts = decision_engine.evaluate(tracked_objects)
-    
+
                 # ---- 7. Send alerts to voice engine ----
                 language = voice_engine.get_language()
                 for alert in alerts:
                     message = alert.get_message(language)
-                                    is_urgent = alert.level == "urgent"
-                        voice_engine.speak(message, language, urgent=is_urgent)
+                    is_urgent = alert.level == "urgent"
+                    voice_engine.speak(message, language, urgent=is_urgent)
+                    dist_val = alert.tracked_object.get("distance_m", "?")
+                    dist_str = f"{dist_val:.1f}m" if isinstance(dist_val, (int, float)) else "?"
                     main_logger.info(
                         f"[{alert.level.upper()}] {message} "
-                        dist = alert.tracked_object.get('distance_m')
-                        dist_str = f"{dist:.1f}m" if isinstance(dist, (int, float)) else "?"
                         f"(dist={dist_str}, "
                         f"id={alert.tracked_object.get('track_id', '?')})"
                     )
-    
+
                 # ---- 8. Annotate frame ----
                 # Set alert_level on all tracked objects for annotation colors
                 for obj in tracked_objects:
@@ -287,19 +307,17 @@ def main():
                             obj["alert_level"] = "info"
                         else:
                             obj["alert_level"] = "silent"
-    
+
                 annotated_frame = annotate_frame(frame, tracked_objects)
-    
-                    cached_tracked_objects = tracked_objects
-                    cached_annotated_frame = annotated_frame
-    
-                else:
-                    # Skipped frame: reuse cached annotations on the new frame
-                    annotated_frame = (
-                        annotate_frame(frame, cached_tracked_objects)
-                        if cached_tracked_objects
-                        else frame
-                    )
+                cached_annotated_frame = annotated_frame
+
+            else:
+                # Skipped frame: reuse cached annotations on the new frame
+                annotated_frame = (
+                    annotate_frame(frame, cached_tracked_objects)
+                    if cached_tracked_objects
+                    else frame
+                )
     
             # ---- 9. Status bar ----
             annotated_frame = draw_status_bar(
@@ -314,11 +332,7 @@ def main():
             if show_window:
                 cv2.imshow(window_name, annotated_frame)
 
-            # LM Studio ----
-            last_detections = detections
-            # LM Studio when needed (expensive)
-
-            # LM Studio ----
+            # ---- 12. Auto-trigger LM Studio scene description ----
             if lm_client.should_auto_trigger() and len(detections) > 0:
                 frame_b64 = frame_to_base64(annotated_frame)
                 lm_client.describe_scene_async(frame_b64, detections, language)
