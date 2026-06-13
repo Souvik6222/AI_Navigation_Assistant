@@ -1,9 +1,15 @@
 # ============================================================
 # modules/decision_engine.py — Rule-based navigation decision maker
 # ============================================================
+#
+# Improvements:
+#   - Path clearance announcements (SIG-2): periodic "path clear"
+#     when no CENTER obstacles within info_threshold
+#   - Velocity-based alert escalation (SIG-3): approaching objects
+#     get escalated alert levels
+# ============================================================
 
 import time
-from collections import defaultdict
 
 from utils.logger import get_logger
 
@@ -68,7 +74,7 @@ class Alert:
         tracked_object: dict,
         priority_score: float = 0.0,
     ):
-        self.level = level              # "urgent", "warning", "info"
+        self.level = level              # "urgent", "warning", "info", "path_clear"
         self.message_en = message_en
         self.message_hi = message_hi
         self.tracked_object = tracked_object
@@ -87,10 +93,18 @@ class DecisionEngine:
     Rule-based navigation decision engine.
 
     Evaluates tracked objects and generates prioritized alerts:
-        - URGENT (< 0.8m): "Stop immediately, obstacle very close"
-        - WARNING (0.8–1.5m, CENTER): "Obstacle ahead, slow down"
-        - INFO (1.5–2.5m): "{label} on your {direction}"
-        - SILENT (> 2.5m): No announcement
+        - URGENT (< urgent_threshold): "Stop immediately, obstacle very close"
+        - WARNING (urgent..warning, CENTER): "Obstacle ahead, slow down"
+        - INFO (warning..info): "{label} on your {direction}"
+        - SILENT (> info_threshold): No announcement
+
+    Path clearance (SIG-2):
+        Announces "Path is clear ahead" every N seconds when no CENTER
+        obstacles are within info_threshold.
+
+    Velocity escalation (SIG-3):
+        Objects approaching the user (negative velocity) get their alert
+        level escalated and "approaching" added to the message.
 
     Anti-hallucination safeguards:
         - Multi-frame verification (3 consecutive frames required)
@@ -101,7 +115,8 @@ class DecisionEngine:
         1. Distance (closer = higher priority)
         2. CENTER > LEFT/RIGHT at same distance
         3. person/car get +0.5 priority boost (dynamic obstacles)
-        4. Maximum 2 alerts per cycle
+        4. Approaching objects get +3.0 priority boost
+        5. Maximum 2 alerts per cycle
     """
 
     def __init__(self, config: dict):
@@ -122,36 +137,26 @@ class DecisionEngine:
         self.distance_variance_threshold = dec_config.get("distance_variance_threshold", 0.20)
         self.dynamic_labels = set(dec_config.get("dynamic_obstacle_labels", ["person", "car"]))
 
-        # Reference to tracker for variance checks
-        self._tracker = None
+        # Path clearance settings
+        self._path_clear_interval = dec_config.get("path_clear_interval_seconds", 15.0)
+        self._last_path_clear_time = 0.0
 
-        # Category-level cooldown: tracks last announcement time per label only.
-        # Keyed by label alone (not direction) so that zone-boundary jitter
-        # between LEFT/CENTER/RIGHT cannot bypass the cooldown.
-        self._category_last_announced: dict = {}   # key: label → timestamp
-        self._category_cooldown: float = dec_config.get("category_cooldown_seconds", 8.0)
+        # Reference to tracker for variance and velocity checks
+        self._tracker = None
 
         log.info(
             f"Decision engine ready — urgent<{self.urgent_threshold}m, "
             f"warning<{self.warning_threshold}m, info<{self.info_threshold}m, "
-            f"max_alerts={self.max_alerts}, category_cooldown={self._category_cooldown}s"
+            f"max_alerts={self.max_alerts}"
         )
 
     def set_tracker(self, tracker):
-        """Set reference to the ObjectTracker for distance variance checks."""
+        """Set reference to the ObjectTracker for distance variance and velocity checks."""
         self._tracker = tracker
 
     def evaluate(self, tracked_objects: list[dict]) -> list[Alert]:
         """
         Evaluate tracked objects and generate prioritized navigation alerts.
-
-        Applies three anti-spam mechanisms:
-          1. Per-object tracker cooldown (should_announce from tracker)
-          2. Multi-frame + distance stability verification
-          3. Category-level cooldown: (label, direction) pair cannot repeat
-             within category_cooldown_seconds regardless of track ID
-          4. Same-class spatial grouping: multiple objects of the same label
-             in the same direction are merged into a single "Multiple X" alert
 
         Args:
             tracked_objects: List of tracked object dicts from tracker.update().
@@ -159,15 +164,18 @@ class DecisionEngine:
         Returns:
             List of Alert objects, sorted by priority, max 2 items.
         """
-        now = time.time()
+        candidates = []
 
-        # ---- Step 1: Basic filtering (per-object checks) ----
-        valid_objects = []
         for obj in tracked_objects:
+            # Only consider objects that tracker says should be announced
             if not obj.get("should_announce", False):
                 continue
+
+            # Multi-frame verification
             if obj.get("tracked_frames", 0) < self.consecutive_frames:
                 continue
+
+            # Distance stability check
             if self._tracker is not None:
                 variance = self._tracker.get_distance_variance(obj.get("track_id", -1))
                 if variance > self.distance_variance_threshold:
@@ -176,119 +184,168 @@ class DecisionEngine:
                         f"distance variance {variance:.2f} > {self.distance_variance_threshold}"
                     )
                     continue
-            valid_objects.append(obj)
 
-        # ---- Step 2: Spatial grouping — group by (label, direction) ----
-        # key: (label, direction) → list of objects in that group
-        groups: dict = defaultdict(list)
-        for obj in valid_objects:
-            key = (obj.get("label", "obstacle"), obj.get("direction", "CENTER"))
-            groups[key].append(obj)
+            distance = obj.get("distance_m", 999.0)
+            direction = obj.get("direction", "CENTER")
+            label = obj.get("label", "obstacle")
 
-        # ---- Step 3: Build one alert per group ----
-        candidates = []
-        for (label, direction), group_objs in groups.items():
-            # Category-level cooldown check (keyed by label only — ignores direction
-            # to prevent zone-boundary jitter from triggering a repeat announcement)
-            last_time = self._category_last_announced.get(label, 0.0)
-            if (now - last_time) < self._category_cooldown:
-                log.debug(
-                    f"Category cooldown active for '{label}' — "
-                    f"{self._category_cooldown - (now - last_time):.1f}s remaining"
-                )
-                continue
+            # Get velocity/motion info from tracker (SIG-3)
+            motion_state = "STATIONARY"
+            velocity = 0.0
+            if self._tracker is not None:
+                track_id = obj.get("track_id", -1)
+                motion_state = self._tracker.get_motion_state(track_id)
+                velocity = self._tracker.get_velocity(track_id)
 
-            # Use the closest object in the group as the representative
-            rep_obj = min(group_objs, key=lambda o: o.get("distance_m", 999.0))
-            distance = rep_obj.get("distance_m", 999.0)
-            count = len(group_objs)
-
-            # Build alert with optional "Multiple X" prefix for groups > 1
-            alert = self._create_alert(
-                label=label,
-                distance=distance,
-                direction=direction,
-                obj=rep_obj,
-                count=count,
-            )
+            # Determine alert level and generate messages
+            alert = self._create_alert(label, distance, direction, obj, motion_state, velocity)
             if alert is not None:
                 candidates.append(alert)
 
-        # ---- Step 4: Sort + limit + record category timestamps ----
+        # Check for path clearance announcement (SIG-2)
+        path_clear_alert = self._check_path_clear(tracked_objects)
+        if path_clear_alert is not None:
+            candidates.append(path_clear_alert)
+
+        # Sort by priority (highest first) and return top N
         candidates.sort(key=lambda a: a.priority_score, reverse=True)
-        final = candidates[: self.max_alerts]
+        return candidates[: self.max_alerts]
 
-        for alert in final:
-            label_key = alert.tracked_object.get("label", "obstacle")
-            self._category_last_announced[label_key] = now
-
-        return final
-
-    def _create_alert(
-        self,
-        label: str,
-        distance: float,
-        direction: str,
-        obj: dict,
-        count: int = 1,
-    ) -> Alert | None:
+    def _check_path_clear(self, tracked_objects: list[dict]) -> Alert | None:
         """
-        Create an alert for a single object or a grouped set of same-class objects.
+        Check if the path ahead is clear and generate a periodic announcement.
+
+        Only announces if:
+            - No CENTER obstacles within info_threshold
+            - Enough time has passed since last announcement
+            - There's something useful to say (not just silence)
 
         Args:
-            label:     COCO class name (e.g. "chair").
-            distance:  Closest distance in the group (meters).
-            direction: Shared direction of the group.
-            obj:       Representative object dict (closest one in group).
-            count:     Number of objects in this group (1 = single object).
+            tracked_objects: All tracked objects in current frame.
 
         Returns:
-            Alert instance, or None if SILENT (distance > info_threshold).
+            Alert for "path is clear" or None.
         """
-        # ---- Priority score ----
+        now = time.time()
+
+        # Don't announce too frequently
+        if (now - self._last_path_clear_time) < self._path_clear_interval:
+            return None
+
+        # Check if any CENTER obstacles are within info range
+        center_obstacles = [
+            obj for obj in tracked_objects
+            if obj.get("direction") == "CENTER"
+            and obj.get("distance_m", 999) < self.info_threshold
+        ]
+
+        if center_obstacles:
+            return None  # Path is NOT clear
+
+        self._last_path_clear_time = now
+
+        # Check if there are side obstacles to mention
+        side_obstacles = [
+            obj for obj in tracked_objects
+            if obj.get("direction") in ("LEFT", "RIGHT")
+            and obj.get("distance_m", 999) < self.info_threshold
+        ]
+
+        if side_obstacles:
+            # Path clear but objects on sides
+            sides = set(obj.get("direction") for obj in side_obstacles)
+            side_text = " and ".join(s.lower() for s in sorted(sides))
+            message_en = f"Path clear ahead, objects on your {side_text}."
+            message_hi = f"Aage rasta saaf hai, {side_text} mein cheezein hain."
+        else:
+            message_en = "Path is clear ahead."
+            message_hi = "Aage rasta saaf hai."
+
+        log.debug(f"Path clearance: {message_en}")
+
+        return Alert(
+            level="path_clear",
+            message_en=message_en,
+            message_hi=message_hi,
+            tracked_object={},  # No specific object
+            priority_score=0.5,  # Low priority — real alerts take precedence
+        )
+
+    def _create_alert(
+        self, label: str, distance: float, direction: str, obj: dict,
+        motion_state: str = "STATIONARY", velocity: float = 0.0,
+    ) -> Alert | None:
+        """
+        Create an alert for a single object based on distance rules.
+
+        Incorporates velocity-based escalation (SIG-3):
+        - APPROACHING objects get bumped up one alert level
+        - "approaching" is added to the voice message
+
+        Returns None for SILENT level (distance > info_threshold).
+        """
+        # Calculate priority score
+        # Base: inverse distance (closer = higher)
         priority = 10.0 / max(distance, 0.1)
 
+        # Bonus for CENTER direction
         if direction == "CENTER":
             priority += 2.0
+
+        # Bonus for dynamic obstacles
         if label in self.dynamic_labels:
             priority += 0.5
 
-        # ---- Build message prefix (singular vs multiple) ----
+        # Bonus for approaching objects (SIG-3)
+        is_approaching = motion_state == "APPROACHING"
+        if is_approaching:
+            priority += 3.0
+
+        # Determine level and messages
         en_dir = _ENGLISH_DIRECTIONS.get(direction, "ahead")
         hi_label = _HINDI_LABELS.get(label, label)
         hi_dir = _HINDI_DIRECTIONS.get(direction, "aage")
 
-        if count > 1:
-            # Grouped: "Multiple chairs ahead"
-            label_en = f"Multiple {label}s"
-            label_hi = f"Kai {hi_label}"
-        else:
-            label_en = label.capitalize()
-            label_hi = hi_label.capitalize()
+        # Motion suffix for voice messages
+        approach_en = ", approaching" if is_approaching else ""
+        approach_hi = ", aa raha hai" if is_approaching else ""
 
-        # ---- Alert level ----
         if distance < self.urgent_threshold:
             level = "urgent"
-            message_en = f"{label_en} very close {en_dir}."
-            message_hi = f"{label_hi} bahut paas {hi_dir}."
-            priority += 20.0  # Massive boost for urgent
+            message_en = f"{label.capitalize()} very close {en_dir}{approach_en}."
+            message_hi = f"{hi_label} bahut paas {hi_dir}{approach_hi}."
+            priority += 20.0
 
         elif distance < self.warning_threshold:
             level = "warning"
-            message_en = f"{label_en} close {en_dir}."
-            message_hi = f"{label_hi} paas {hi_dir}."
-            priority += 5.0
+            # Escalate to urgent if approaching fast
+            if is_approaching and velocity < -0.3:
+                level = "urgent"
+                message_en = f"{label.capitalize()} approaching fast {en_dir}!"
+                message_hi = f"{hi_label} tez aa raha hai {hi_dir}!"
+                priority += 15.0
+            else:
+                message_en = f"{label.capitalize()} close {en_dir}{approach_en}."
+                message_hi = f"{hi_label} paas {hi_dir}{approach_hi}."
+                priority += 5.0
 
         elif distance < self.info_threshold:
             level = "info"
-            message_en = f"{label_en} nearby {en_dir}."
-            message_hi = f"{label_hi} nazdeek {hi_dir}."
+            # Escalate to warning if approaching
+            if is_approaching:
+                level = "warning"
+                message_en = f"{label.capitalize()} approaching {en_dir}."
+                message_hi = f"{hi_label} aa raha hai {hi_dir}."
+                priority += 5.0
+            else:
+                message_en = f"{label.capitalize()} nearby {en_dir}."
+                message_hi = f"{hi_label} nazdeek {hi_dir}."
 
         else:
             # SILENT — no alert
             return None
 
-        # Tag representative object with alert level for frame annotation
+        # Tag object with alert level for annotation
         obj["alert_level"] = level
 
         return Alert(

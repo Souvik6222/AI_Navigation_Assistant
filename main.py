@@ -9,7 +9,7 @@
 # Keyboard shortcuts:
 #   Q / ESC  — Quit
 #   H        — Toggle language (English ↔ Hindi)
-#   D        — Trigger LM Studio scene description
+# LM Studio scene description
 #
 # Usage:
 #   python main.py
@@ -34,8 +34,8 @@ from modules.tracker import ObjectTracker
 from modules.direction import get_direction
 from modules.decision_engine import DecisionEngine
 from modules.voice import VoiceEngine
-from modules.lm_studio_client import LMStudioClient
 from modules.camera import CameraStream
+from modules.lm_studio_client import LMStudioClient
 
 log = get_logger("main")
 
@@ -83,7 +83,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--no-llm",
         action="store_true",
-        help="Disable local LM Studio LLM brain",
+        help="Disable Groq API integration",
     )
     parser.add_argument(
         "--config",
@@ -153,7 +153,7 @@ def main():
     voice_engine = VoiceEngine(config)
     voice_engine.start()
 
-    # 6. LM Studio Client (local LLM brain)
+    # LM Studio Client
     lm_client = LMStudioClient(config)
     lm_client.set_voice_engine(voice_engine)
 
@@ -169,25 +169,21 @@ def main():
         cam_index = int(cam_index)
     frame_width = cam_config.get("frame_width", 640)
     frame_height = cam_config.get("frame_height", 480)
+    frame_rotation = cam_config.get("rotation", 0)
 
     # Display config
     display_config = config.get("display", {})
     show_window = display_config.get("show_window", True)
     window_name = display_config.get("window_name", "AI Navigation Assistant")
 
-    # Performance config
-    perf_config = config.get("performance", {})
-    process_every_n = max(1, perf_config.get("process_every_n_frames", 3))
-    main_logger.info(f"Frame skipping: processing every {process_every_n} frame(s)")
-
-    # ---- Open webcam (threaded async reader) ----
-    main_logger.info(f"Opening camera (source={cam_index})...")
+    # ---- Open webcam ----
+    main_logger.info(f"Opening camera (index={cam_index})...")
     # Suppress harmless MJPEG decoder warnings from IP camera streams
     os.environ.setdefault("OPENCV_LOG_LEVEL", "0")
     try:
-        cv2.setLogLevel(0)  # type: ignore[attr-defined]
+        cv2.setLogLevel(0)
     except AttributeError:
-        pass  # Older OpenCV builds don't expose setLogLevel — env var covers it
+        pass
 
     cam = CameraStream(cam_index, frame_width, frame_height)
 
@@ -212,24 +208,11 @@ def main():
     fps_start_time = time.time()
     current_fps = 0.0
 
-    # ---- Language toggle cooldown (prevents double-fire from key repeat) ----
-    last_lang_toggle_time = 0.0
-    LANG_TOGGLE_COOLDOWN = 2.0  # seconds
-
-    # ---- Last annotated state (for LM Studio) ----
+    # LM Studio) ----
     last_frame_base64 = ""
     last_detections = []
 
-    # ---- Frame counter for skipping ----
-    frame_index = 0
-
-    # ---- Cached state for skipped frames ----
-    cached_tracked_objects = []
-    cached_annotated_frame = None
-
-    main_logger.info(
-        f"Pipeline running — press Q to quit, H to toggle language, D for scene description"
-    )
+    main_logger.info("Pipeline running — press Q to quit, H to toggle language, D for scene description")
 
     # ============================================================
     # MAIN LOOP
@@ -238,11 +221,18 @@ def main():
         while True:
             loop_start = time.time()
 
-            # ---- 1. Capture frame (async — always the latest) ----
+            # ---- 1. Capture frame ----
             ret, frame = cam.read()
-            if not ret or frame is None:
-                time.sleep(0.01)
+            if not ret:
+                main_logger.warning("Failed to read frame from webcam")
                 continue
+
+            # Rotate frame if needed (fix phone portrait orientation)
+            if frame_rotation != 0:
+                rot_map = {90: cv2.ROTATE_90_CLOCKWISE, -90: cv2.ROTATE_90_COUNTERCLOCKWISE, 180: cv2.ROTATE_180}
+                rot_code = rot_map.get(frame_rotation)
+                if rot_code is not None:
+                    frame = cv2.rotate(frame, rot_code)
 
             # Resize to standard dimensions
             frame = resize_frame(frame, frame_width, frame_height)
@@ -250,42 +240,42 @@ def main():
 
             # ---- Frame skip: only run AI on every Nth frame ----
             if frame_index % process_every_n == 0:
-
-                # ---- 2. YOLOv8 Detection ----
+    
+                    # ---- 2. YOLOv8 Detection ----
                 detections = detector.detect(frame)
-
-                # ---- 3. MiDaS Depth Estimation (CONDITIONAL) ----
-                # Only run the heavy depth model if objects were detected
+    
+                # ---- 3. MiDaS Depth Estimation (conditional) ----
                 if len(detections) > 0:
                     depth_map = depth_estimator.estimate(frame)
-
-                    # ---- 4. Enrich detections with direction + distance ----
                     for det in detections:
+                        # Direction
                         det["direction"] = get_direction(
                             det["center_x"], frame_width, left_boundary, right_boundary
                         )
+                        # Distance
                         det["distance_m"] = depth_estimator.get_distance(depth_map, det["bbox"])
-
                 # ---- 5. Update tracker ----
                 tracked_objects = tracker.update(detections, frame_width)
-                cached_tracked_objects = tracked_objects
-
+    
                 # ---- 6. Decision engine → alerts ----
                 alerts = decision_engine.evaluate(tracked_objects)
-
+    
                 # ---- 7. Send alerts to voice engine ----
                 language = voice_engine.get_language()
                 for alert in alerts:
                     message = alert.get_message(language)
-                    is_urgent = alert.level == "urgent"
-                    voice_engine.speak(message, language, urgent=is_urgent)
+                                    is_urgent = alert.level == "urgent"
+                        voice_engine.speak(message, language, urgent=is_urgent)
                     main_logger.info(
                         f"[{alert.level.upper()}] {message} "
-                        f"(dist={alert.tracked_object.get('distance_m', '?'):.1f}m, "
+                        dist = alert.tracked_object.get('distance_m')
+                        dist_str = f"{dist:.1f}m" if isinstance(dist, (int, float)) else "?"
+                        f"(dist={dist_str}, "
                         f"id={alert.tracked_object.get('track_id', '?')})"
                     )
-
+    
                 # ---- 8. Annotate frame ----
+                # Set alert_level on all tracked objects for annotation colors
                 for obj in tracked_objects:
                     if "alert_level" not in obj:
                         dist = obj.get("distance_m", 999)
@@ -297,26 +287,21 @@ def main():
                             obj["alert_level"] = "info"
                         else:
                             obj["alert_level"] = "silent"
-
+    
                 annotated_frame = annotate_frame(frame, tracked_objects)
-                cached_annotated_frame = annotated_frame
-
-                # ---- 12. Auto-trigger LM Studio scene description ----
-                if lm_client.should_auto_trigger() and len(detections) > 0:
-                    frame_b64 = frame_to_base64(annotated_frame)
-                    lm_client.describe_scene_async(frame_b64, detections, language)
-                    lm_client.mark_triggered()
-
-            else:
-                # Skipped frame: reuse cached annotations on the new frame
-                annotated_frame = (
-                    annotate_frame(frame, cached_tracked_objects)
-                    if cached_tracked_objects
-                    else frame
-                )
-
-            # ---- 9. Status bar (always drawn) ----
-            language = voice_engine.get_language()
+    
+                    cached_tracked_objects = tracked_objects
+                    cached_annotated_frame = annotated_frame
+    
+                else:
+                    # Skipped frame: reuse cached annotations on the new frame
+                    annotated_frame = (
+                        annotate_frame(frame, cached_tracked_objects)
+                        if cached_tracked_objects
+                        else frame
+                    )
+    
+            # ---- 9. Status bar ----
             annotated_frame = draw_status_bar(
                 annotated_frame,
                 language=language,
@@ -325,9 +310,19 @@ def main():
                 groq_status=lm_client.get_status(),
             )
 
-            # ---- 10. Display (always shown) ----
+            # ---- 10. Display ----
             if show_window:
                 cv2.imshow(window_name, annotated_frame)
+
+            # LM Studio ----
+            last_detections = detections
+            # LM Studio when needed (expensive)
+
+            # LM Studio ----
+            if lm_client.should_auto_trigger() and len(detections) > 0:
+                frame_b64 = frame_to_base64(annotated_frame)
+                lm_client.describe_scene_async(frame_b64, detections, language)
+                lm_client.mark_triggered()
 
             # ---- 13. Keyboard input ----
             key = cv2.waitKey(1) & 0xFF
@@ -343,12 +338,12 @@ def main():
                     new_lang = voice_engine.toggle_language()
                     main_logger.info(f"Language toggled to: {new_lang}")
                 else:
-                    main_logger.debug("Language toggle ignored — cooldown active")
+                    main_logger.debug("Language toggle ignored -- cooldown active")
 
             elif key == ord("d"):  # LM Studio scene description
                 main_logger.info("Manual scene description triggered")
                 frame_b64 = frame_to_base64(annotated_frame)
-                lm_client.describe_scene_async(frame_b64, [], language)
+                lm_client.describe_scene_async(frame_b64, detections, language)
                 lm_client.mark_triggered()
 
             # ---- FPS calculation ----
