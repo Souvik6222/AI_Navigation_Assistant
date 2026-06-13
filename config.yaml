@@ -8,7 +8,7 @@ performance:
 
 # --- Camera ---
 camera:
-  device_index: "http://192.168.153.197:8080/video"  # for mobile
+  device_index:         0     #"http://192.168.85.27:8080/video"  # for mobile
   # device_index: 0                     # Internal webcam
   frame_width: 320
   frame_height: 240
@@ -17,7 +17,7 @@ camera:
 
 # --- Object Detection (YOLOv8) ---
 detection:
-  model_path: "yolov8x.pt"   # Change to yolov8n.pt for faster CPU inference
+  model_path: "yolov8n.pt" 
   confidence_threshold: 0.80
   min_bbox_area_ratio: 0.01   # Minimum bounding box area as fraction of frame (1%)
   target_classes:             # COCO class names to detect (whitelist)

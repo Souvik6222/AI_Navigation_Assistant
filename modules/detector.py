@@ -2,6 +2,7 @@
 # modules/detector.py — YOLOv8 object detection wrapper
 # ============================================================
 
+import torch
 import numpy as np
 from ultralytics import YOLO
 from utils.logger import get_logger
@@ -66,8 +67,14 @@ class ObjectDetector:
         self.min_bbox_area_ratio = det_config.get("min_bbox_area_ratio", 0.01)
         self.target_class_names = set(det_config.get("target_classes", COCO_NAVIGATION_CLASSES.values()))
 
-        log.info(f"Loading YOLOv8 model: {self.model_path}")
+        # Device selection: prefer CUDA if available
+        _cfg_device = det_config.get("device", "cuda")
+        self.device = _cfg_device if (_cfg_device == "cpu" or torch.cuda.is_available()) else "cpu"
+
+        log.info(f"Loading YOLOv8 model: {self.model_path} on {self.device}")
         self.model = YOLO(self.model_path)
+        if self.model_path.endswith(".pt"):
+            self.model.to(self.device)
 
         # Build set of target class IDs from model's class names
         self.target_class_ids = set()
@@ -108,6 +115,7 @@ class ObjectDetector:
             frame,
             conf=self.confidence_threshold,
             classes=list(self.target_class_ids) if self.target_class_ids else None,
+            device=self.device,
             verbose=False,
         )
 
