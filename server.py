@@ -42,7 +42,7 @@ from modules.tracker import ObjectTracker
 from modules.direction import get_direction
 from modules.decision_engine import DecisionEngine
 from modules.voice import VoiceEngine
-from modules.claude_client import ClaudeClient
+from modules.lm_studio_client import LMStudioClient
 
 log = get_logger("server")
 
@@ -53,10 +53,10 @@ log = get_logger("server")
 # Latest data for broadcasting
 latest_frame_b64 = ""
 latest_telemetry = {}
-alert_queue = asyncio.Queue()
+data_lock = threading.Lock()
 
-# Connected WebSocket clients
-connected_clients: set[WebSocket] = set()
+# Connected WebSocket clients (websocket -> alert_queue)
+connected_clients: dict[WebSocket, asyncio.Queue] = {}
 clients_lock = threading.Lock()
 
 # Pipeline control flags (modified by dashboard controls)
@@ -111,8 +111,8 @@ def pipeline_thread(config: dict, loop: asyncio.AbstractEventLoop):
     decision_engine.set_tracker(tracker)
     voice_engine = VoiceEngine(config)
     voice_engine.start()
-    claude_client = ClaudeClient(config)
-    claude_client.set_voice_engine(voice_engine)
+    lm_client = LLMClient(config)
+    lm_client.set_voice_engine(voice_engine)
 
     # Store module references for dashboard control
     modules["detector"] = detector
@@ -120,7 +120,7 @@ def pipeline_thread(config: dict, loop: asyncio.AbstractEventLoop):
     modules["tracker"] = tracker
     modules["decision_engine"] = decision_engine
     modules["voice_engine"] = voice_engine
-    modules["claude_client"] = claude_client
+    modules["lm_client"] = lm_client
 
     # Config values
     dir_config = config.get("direction", {})
@@ -150,7 +150,7 @@ def pipeline_thread(config: dict, loop: asyncio.AbstractEventLoop):
 
     # Startup greeting
     language = voice_engine.get_language()
-    greeting = claude_client.get_startup_greeting(language)
+    greeting = lm_client.get_startup_greeting(language)
     if greeting:
         log.info(f"Startup greeting: {greeting}")
         voice_engine.speak(greeting, language)
@@ -230,7 +230,9 @@ def pipeline_thread(config: dict, loop: asyncio.AbstractEventLoop):
                     },
                 }
                 try:
-                    loop.call_soon_threadsafe(alert_queue.put_nowait, alert_data)
+                    with clients_lock:
+                        for ws, q in connected_clients.items():
+                            loop.call_soon_threadsafe(q.put_nowait, alert_data)
                 except Exception:
                     pass
 
@@ -238,11 +240,11 @@ def pipeline_thread(config: dict, loop: asyncio.AbstractEventLoop):
             for obj in tracked_objects:
                 if "alert_level" not in obj:
                     dist = obj.get("distance_m", 999)
-                    if dist < 0.8:
+                    if dist < decision_engine.urgent_threshold:
                         obj["alert_level"] = "urgent"
-                    elif dist < 1.5:
+                    elif dist < decision_engine.warning_threshold:
                         obj["alert_level"] = "warning"
-                    elif dist < 2.5:
+                    elif dist < decision_engine.info_threshold:
                         obj["alert_level"] = "info"
                     else:
                         obj["alert_level"] = "silent"
@@ -255,7 +257,7 @@ def pipeline_thread(config: dict, loop: asyncio.AbstractEventLoop):
                 language=language,
                 fps=current_fps,
                 num_objects=len(tracked_objects),
-                groq_status=claude_client.get_status(),
+                groq_status=lm_client.get_status(),
             )
 
             # ---- 9. Local display (optional) ----
@@ -270,7 +272,8 @@ def pipeline_thread(config: dict, loop: asyncio.AbstractEventLoop):
 
             # ---- 10. Encode frame for dashboard ----
             _, jpg_buf = cv2.imencode(".jpg", annotated_frame, [cv2.IMWRITE_JPEG_QUALITY, 70])
-            latest_frame_b64 = base64.b64encode(jpg_buf).decode("utf-8")
+            with data_lock:
+                latest_frame_b64 = base64.b64encode(jpg_buf).decode("utf-8")
 
             # ---- 11. Total latency ----
             lat_total = (time.time() - loop_start) * 1000
@@ -279,8 +282,9 @@ def pipeline_thread(config: dict, loop: asyncio.AbstractEventLoop):
             now = time.time()
             if now - last_telemetry_time >= 0.5:
                 last_telemetry_time = now
-                latest_telemetry = {
-                    "type": "telemetry",
+                with data_lock:
+                    latest_telemetry = {
+                        "type": "telemetry",
                     "fps": round(current_fps, 1),
                     "resolution": {"width": frame_width, "height": frame_height},
                     "latency": {
@@ -308,10 +312,10 @@ def pipeline_thread(config: dict, loop: asyncio.AbstractEventLoop):
                 }
 
             # ---- 13. Auto-trigger Groq ----
-            if claude_client.should_auto_trigger() and len(detections) > 0:
+            if lm_client.should_auto_trigger() and len(detections) > 0:
                 frame_b64 = frame_to_base64(annotated_frame)
-                claude_client.describe_scene_async(frame_b64, detections, language)
-                claude_client.mark_triggered()
+                lm_client.describe_scene_async(frame_b64, detections, language)
+                lm_client.mark_triggered()
 
             # ---- FPS calculation ----
             fps_counter += 1
@@ -422,12 +426,12 @@ def apply_control(key: str, value):
                 ).start()
 
         elif key == "groq_enabled":
-            cc = modules.get("claude_client")
+            cc = modules.get("lm_client")
             if cc:
                 cc.enabled = bool(value)
 
         elif key == "groq_interval":
-            cc = modules.get("claude_client")
+            cc = modules.get("lm_client")
             if cc:
                 cc.auto_interval = int(value)
 
@@ -486,7 +490,9 @@ async def serve_js():
 async def websocket_endpoint(websocket: WebSocket):
     """WebSocket endpoint for real-time dashboard communication."""
     await websocket.accept()
-    connected_clients.add(websocket)
+    q = asyncio.Queue()
+    with clients_lock:
+        connected_clients[websocket] = q
     log.info(f"Dashboard client connected ({len(connected_clients)} total)")
 
     # Send initial config sync
@@ -498,7 +504,7 @@ async def websocket_endpoint(websocket: WebSocket):
             pass
 
     # Two async tasks: send loop + receive loop
-    send_task = asyncio.create_task(_ws_send_loop(websocket))
+    send_task = asyncio.create_task(_ws_send_loop(websocket, q))
     receive_task = asyncio.create_task(_ws_receive_loop(websocket))
 
     try:
@@ -512,11 +518,13 @@ async def websocket_endpoint(websocket: WebSocket):
     except Exception:
         pass
     finally:
-        connected_clients.discard(websocket)
+        with clients_lock:
+            if websocket in connected_clients:
+                del connected_clients[websocket]
         log.info(f"Dashboard client disconnected ({len(connected_clients)} total)")
 
 
-async def _ws_send_loop(websocket: WebSocket):
+async def _ws_send_loop(websocket: WebSocket, alert_queue: asyncio.Queue):
     """Send frames, telemetry, and alerts to a connected dashboard client."""
     last_frame_sent = 0.0
     last_telem_sent = 0.0
@@ -527,13 +535,17 @@ async def _ws_send_loop(websocket: WebSocket):
             now = time.time()
 
             # Send frame
-            if latest_frame_b64 and (now - last_frame_sent) >= frame_interval:
-                await websocket.send_json({"type": "frame", "data": latest_frame_b64})
+            with data_lock:
+                frame_to_send = latest_frame_b64
+            if frame_to_send and (now - last_frame_sent) >= frame_interval:
+                await websocket.send_json({"type": "frame", "data": frame_to_send})
                 last_frame_sent = now
 
             # Send telemetry (2Hz)
-            if latest_telemetry and (now - last_telem_sent) >= 0.5:
-                await websocket.send_json(latest_telemetry)
+            with data_lock:
+                telem_to_send = latest_telemetry
+            if telem_to_send and (now - last_telem_sent) >= 0.5:
+                await websocket.send_json(telem_to_send)
                 last_telem_sent = now
 
             # Send any pending alerts

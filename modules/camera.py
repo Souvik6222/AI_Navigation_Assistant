@@ -38,14 +38,6 @@ class CameraStream:
     """
 
     def __init__(self, source, width: int = 640, height: int = 480):
-        """
-        Initialize the camera stream.
-
-        Args:
-            source: Camera device index (int) or IP stream URL (str).
-            width:  Desired frame width.
-            height: Desired frame height.
-        """
         self.source = source
         self.width = width
         self.height = height
@@ -53,8 +45,6 @@ class CameraStream:
         self._cap = cv2.VideoCapture(source)
         self._cap.set(cv2.CAP_PROP_FRAME_WIDTH, width)
         self._cap.set(cv2.CAP_PROP_FRAME_HEIGHT, height)
-
-        # Reduce internal OpenCV buffer to 1 frame (if the backend supports it)
         self._cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
 
         self._lock = threading.Lock()
@@ -64,11 +54,9 @@ class CameraStream:
         self._thread: threading.Thread | None = None
 
     def is_opened(self) -> bool:
-        """Check if the underlying VideoCapture is opened."""
         return self._cap.isOpened()
 
     def start(self):
-        """Start the background frame-grabbing thread."""
         if self._running:
             return
         self._running = True
@@ -81,17 +69,10 @@ class CameraStream:
         log.info(f"Camera stream started — source={self.source}")
 
     def read(self) -> tuple[bool, np.ndarray | None]:
-        """
-        Return the most recent frame (non-blocking).
-
-        Returns:
-            (success_bool, frame_or_None)
-        """
         with self._lock:
             return self._ret, self._frame.copy() if self._frame is not None else None
 
     def stop(self):
-        """Stop the reader thread and release the camera."""
         self._running = False
         if self._thread is not None:
             self._thread.join(timeout=2.0)
@@ -100,20 +81,13 @@ class CameraStream:
         log.info("Camera stream stopped")
 
     def release(self):
-        """Alias for stop() — drop-in replacement for cv2.VideoCapture."""
         self.stop()
 
-    # ------------------------------------------------------------------
-    # Internal
-    # ------------------------------------------------------------------
-
     def _reader_loop(self):
-        """Continuously grab frames, keeping only the latest one."""
         while self._running:
             ret, frame = self._cap.read()
             with self._lock:
                 self._ret = ret
                 self._frame = frame
             if not ret:
-                # Brief pause on failure to avoid busy-spin
                 time.sleep(0.05)
