@@ -20,18 +20,20 @@ import asyncio
 import base64
 import json
 import os
+import shutil
 import sys
 import time
 import threading
+import tempfile
 
 import cv2
 import numpy as np
 import yaml
 import torch
 
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect, UploadFile, File
 from fastapi.staticfiles import StaticFiles
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, JSONResponse
 import uvicorn
 
 from utils.logger import get_logger, setup_file_logging
@@ -67,6 +69,23 @@ pipeline_controls = {
 
 # Module references (populated at startup)
 modules = {}
+
+# ---- Testing Mode globals ----
+test_mode_state = {
+    "active": False,             # True when processing an uploaded video
+    "video_path": None,          # Path to the uploaded test video file
+    "switch_requested": False,   # Flag to tell pipeline to swap source
+    "stop_requested": False,     # Flag to tell pipeline to go back to camera
+    "progress": 0.0,             # 0.0 – 1.0 progress through the video
+    "total_frames": 0,
+    "current_frame": 0,
+    "video_fps": 0,              # Original FPS of the uploaded video
+    "filename": "",              # Original filename for display
+}
+
+# Directory for uploaded test videos
+UPLOAD_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "temp_uploads")
+os.makedirs(UPLOAD_DIR, exist_ok=True)
 
 
 # ============================================================
@@ -135,6 +154,11 @@ def pipeline_thread(config: dict, loop: asyncio.AbstractEventLoop):
     display_config = config.get("display", {})
     window_name = display_config.get("window_name", "AI Navigation Assistant")
 
+    # Performance config
+    perf_config = config.get("performance", {})
+    process_every_n = max(1, perf_config.get("process_every_n_frames", 3))
+    log.info(f"Frame skipping: processing every {process_every_n} frame(s)")
+
     # ---- Open webcam ----
     log.info(f"Opening camera (index={cam_index})...")
     cap = cv2.VideoCapture(cam_index)
@@ -142,18 +166,16 @@ def pipeline_thread(config: dict, loop: asyncio.AbstractEventLoop):
     if not cap.isOpened():
         log.error("Failed to open webcam!")
         voice_engine.speak("Camera not found. Please check your webcam connection.", "en")
-        return
+        # Don't return — allow test mode to work without a camera
+        cap = None
+    else:
+        cap.set(cv2.CAP_PROP_FRAME_WIDTH, frame_width)
+        cap.set(cv2.CAP_PROP_FRAME_HEIGHT, frame_height)
+        log.info(f"Camera opened — {frame_width}x{frame_height}")
 
-    cap.set(cv2.CAP_PROP_FRAME_WIDTH, frame_width)
-    cap.set(cv2.CAP_PROP_FRAME_HEIGHT, frame_height)
-    log.info(f"Camera opened — {frame_width}x{frame_height}")
-
-    # Startup greeting
-    language = voice_engine.get_language()
-    greeting = claude_client.get_startup_greeting(language)
-    if greeting:
-        log.info(f"Startup greeting: {greeting}")
-        voice_engine.speak(greeting, language)
+    # Initial environment scan state
+    initial_scan_triggered = False
+    initial_scan_start_time = 0.0
 
     # FPS tracking
     fps_counter = 0
@@ -162,6 +184,19 @@ def pipeline_thread(config: dict, loop: asyncio.AbstractEventLoop):
 
     # Telemetry throttle (send every 500ms)
     last_telemetry_time = 0.0
+
+    # Test mode capture (separate from webcam cap)
+    test_cap = None
+    is_test_mode = False
+
+    # Cached states for frame skipping
+    frame_index = 0
+    cached_tracked_objects = []
+    lat_yolo = 0.0
+    lat_midas = 0.0
+    lat_tracking = 0.0
+    detections = []
+    tracked_objects = []
 
     log.info("Pipeline running in server mode — dashboard at http://localhost:8765")
 
@@ -175,64 +210,191 @@ def pipeline_thread(config: dict, loop: asyncio.AbstractEventLoop):
         while True:
             loop_start = time.time()
 
+            # ---- 0. Check for test mode switch ----
+            if test_mode_state["switch_requested"]:
+                test_mode_state["switch_requested"] = False
+                video_path = test_mode_state["video_path"]
+                if video_path and os.path.exists(video_path):
+                    log.info(f"TESTING MODE: Switching to video {video_path}")
+                    test_cap = cv2.VideoCapture(video_path)
+                    if test_cap.isOpened():
+                        is_test_mode = True
+                        test_mode_state["active"] = True
+                        test_mode_state["total_frames"] = int(test_cap.get(cv2.CAP_PROP_FRAME_COUNT))
+                        test_mode_state["video_fps"] = test_cap.get(cv2.CAP_PROP_FPS) or 30
+                        test_mode_state["current_frame"] = 0
+                        test_mode_state["progress"] = 0.0
+                        
+                        # Fetch frame count in background thread to prevent blocking startup
+                        def _async_frame_count(cap_obj):
+                            try:
+                                count = int(cap_obj.get(cv2.CAP_PROP_FRAME_COUNT))
+                                if count > 0:
+                                    test_mode_state["total_frames"] = count
+                            except Exception:
+                                pass
+                        
+                        test_mode_state["total_frames"] = 1  # placeholder
+                        threading.Thread(target=_async_frame_count, args=(test_cap,), daemon=True).start()
+                        
+                        # Reset tracker for fresh test
+                        tracker.reset() if hasattr(tracker, 'reset') else None
+                        log.info(f"Test video opened @ {test_mode_state['video_fps']} fps (fetching total frames asynchronously)")
+                    else:
+                        log.error(f"Failed to open test video: {video_path}")
+                        test_cap = None
+                        test_mode_state["active"] = False
+
+            if test_mode_state["stop_requested"]:
+                test_mode_state["stop_requested"] = False
+                if test_cap:
+                    test_cap.release()
+                    test_cap = None
+                is_test_mode = False
+                test_mode_state["active"] = False
+                test_mode_state["progress"] = 0.0
+                test_mode_state["current_frame"] = 0
+                log.info("TESTING MODE: Stopped, returning to live camera")
+
             # ---- 1. Capture frame ----
-            ret, frame = cap.read()
-            if not ret:
-                time.sleep(0.01)
+            if is_test_mode and test_cap:
+                # To prevent lag on heavy/high-FPS videos, calculate how many frames to skip
+                # based on the elapsed time of processing.
+                fps_video = test_mode_state["video_fps"]
+                current_frame = test_mode_state["current_frame"]
+                total = test_mode_state["total_frames"]
+                
+                # Check how much real time has passed since loop started
+                now = time.time()
+                if hasattr(pipeline_thread, "last_frame_time"):
+                    elapsed = now - pipeline_thread.last_frame_time
+                    # Calculate how many frames we should advance
+                    frames_to_skip = int(elapsed * fps_video)
+                    if frames_to_skip > 1:
+                        # Skip ahead in the video capture stream to catch up
+                        target_frame = min(total - 1, current_frame + frames_to_skip)
+                        test_cap.set(cv2.CAP_PROP_POS_FRAMES, target_frame)
+                
+                pipeline_thread.last_frame_time = now
+
+                ret, frame = test_cap.read()
+                if not ret:
+                    # Video finished — loop or stop
+                    log.info("TESTING MODE: Video finished")
+                    test_cap.release()
+                    test_cap = None
+                    is_test_mode = False
+                    test_mode_state["active"] = False
+                    test_mode_state["progress"] = 1.0
+                    if hasattr(pipeline_thread, "last_frame_time"):
+                        delattr(pipeline_thread, "last_frame_time")
+                    time.sleep(0.01)
+                    continue
+                
+                test_mode_state["current_frame"] = int(test_cap.get(cv2.CAP_PROP_POS_FRAMES))
+                test_mode_state["progress"] = test_mode_state["current_frame"] / total if total > 0 else 0
+            elif cap and cap.isOpened():
+                ret, frame = cap.read()
+                if not ret:
+                    time.sleep(0.01)
+                    continue
+            else:
+                # No camera and not in test mode — wait
+                time.sleep(0.1)
                 continue
 
             frame = resize_frame(frame, frame_width, frame_height)
-
-            # ---- 2. YOLOv8 Detection ----
-            t_yolo = time.time()
-            detections = detector.detect(frame)
-            lat_yolo = (time.time() - t_yolo) * 1000
-
-            # ---- 3. MiDaS Depth ----
-            t_midas = time.time()
-            depth_map = depth_estimator.estimate(frame)
-            lat_midas = (time.time() - t_midas) * 1000
-
-            # ---- 4. Enrich with direction + distance ----
-            for det in detections:
-                det["direction"] = get_direction(
-                    det["center_x"], frame_width, left_boundary, right_boundary
-                )
-                det["distance_m"] = depth_estimator.get_distance(depth_map, det["bbox"])
-
-            # ---- 5. Tracking ----
-            t_track = time.time()
-            tracked_objects = tracker.update(detections, frame_width)
-            lat_tracking = (time.time() - t_track) * 1000
-
-            # ---- 6. Decision engine ----
-            alerts = decision_engine.evaluate(tracked_objects)
-
-            # ---- 7. Voice + alert broadcast ----
+            frame_index += 1
             language = voice_engine.get_language()
-            for alert_obj in alerts:
-                message = alert_obj.get_message(language)
 
-                if not pipeline_controls.get("mute_all", False):
-                    voice_engine.speak(message, language)
+            # Trigger initial environment scan on the very first frame
+            if not initial_scan_triggered:
+                initial_scan_triggered = True
+                initial_scan_start_time = time.time()
+                log.info("STARTUP: Triggering initial environment scene description")
+                voice_engine.speak("Scanning environment. Please stand still.", language)
+                
+                # Run detections on this first frame to feed to the LLM
+                first_detections = detector.detect(frame)
+                if len(first_detections) > 0:
+                    depth_map = depth_estimator.estimate(frame)
+                    for det in first_detections:
+                        det["direction"] = get_direction(
+                            det["center_x"], frame_width, left_boundary, right_boundary
+                        )
+                        det["distance_m"] = depth_estimator.get_distance(depth_map, det["bbox"])
+                
+                # Send the first frame to Groq Vision
+                if claude_client.enabled:
+                    frame_b64 = frame_to_base64(frame)
+                    claude_client.describe_scene_async(frame_b64, first_detections, language)
+                    claude_client.mark_triggered()
 
-                # Push to async alert queue
-                alert_data = {
-                    "type": "alert",
-                    "level": alert_obj.level,
-                    "message": message,
-                    "timestamp": time.strftime("%H:%M:%S"),
-                    "object": {
-                        "label": alert_obj.tracked_object.get("label", "?"),
-                        "distance_m": round(alert_obj.tracked_object.get("distance_m", 0), 1),
-                        "direction": alert_obj.tracked_object.get("direction", "?"),
-                        "track_id": alert_obj.tracked_object.get("track_id", -1),
-                    },
-                }
-                try:
-                    loop.call_soon_threadsafe(alert_queue.put_nowait, alert_data)
-                except Exception:
-                    pass
+            # Only run AI pipeline on every Nth frame
+            if frame_index % process_every_n == 0:
+                # ---- 2. YOLOv8 Detection ----
+                t_yolo = time.time()
+                detections = detector.detect(frame)
+                lat_yolo = (time.time() - t_yolo) * 1000
+
+                # ---- 3. MiDaS Depth (CONDITIONAL: only if objects are detected) ----
+                if len(detections) > 0:
+                    t_midas = time.time()
+                    depth_map = depth_estimator.estimate(frame)
+                    lat_midas = (time.time() - t_midas) * 1000
+
+                    # ---- 4. Enrich with direction + distance ----
+                    for det in detections:
+                        det["direction"] = get_direction(
+                            det["center_x"], frame_width, left_boundary, right_boundary
+                        )
+                        det["distance_m"] = depth_estimator.get_distance(depth_map, det["bbox"])
+                else:
+                    lat_midas = 0.0
+
+                # ---- 5. Tracking ----
+                t_track = time.time()
+                tracked_objects = tracker.update(detections, frame_width)
+                lat_tracking = (time.time() - t_track) * 1000
+                cached_tracked_objects = tracked_objects
+
+                # ---- 6. Decision engine ----
+                alerts = decision_engine.evaluate(tracked_objects)
+
+                # ---- 7. Voice + alert broadcast ----
+                language = voice_engine.get_language()
+                speak_info = config.get("voice", {}).get("speak_info_alerts", False)
+                # Silence real-time voice alerts for the first 5 seconds to let the environment scan finish speaking
+                silence_voice = (time.time() - initial_scan_start_time) < 5.0
+                
+                for alert_obj in alerts:
+                    message = alert_obj.get_message(language)
+
+                    if not pipeline_controls.get("mute_all", False):
+                        if not silence_voice:
+                            if alert_obj.level != "info" or speak_info:
+                                voice_engine.speak(message, language)
+
+                    # Push to async alert queue
+                    alert_data = {
+                        "type": "alert",
+                        "level": alert_obj.level,
+                        "message": message,
+                        "timestamp": time.strftime("%H:%M:%S"),
+                        "object": {
+                            "label": alert_obj.tracked_object.get("label", "?"),
+                            "distance_m": round(alert_obj.tracked_object.get("distance_m", 0), 1),
+                            "direction": alert_obj.tracked_object.get("direction", "?"),
+                            "track_id": alert_obj.tracked_object.get("track_id", -1),
+                        },
+                    }
+                    try:
+                        loop.call_soon_threadsafe(alert_queue.put_nowait, alert_data)
+                    except Exception:
+                        pass
+            else:
+                # Skipped frame: reuse cached tracked objects
+                tracked_objects = cached_tracked_objects
 
             # ---- 8. Annotate frame ----
             for obj in tracked_objects:
@@ -250,6 +412,7 @@ def pipeline_thread(config: dict, loop: asyncio.AbstractEventLoop):
             annotated_frame = annotate_frame(frame, tracked_objects)
 
             # Status bar on annotated frame
+            language = voice_engine.get_language()
             annotated_frame = draw_status_bar(
                 annotated_frame,
                 language=language,
@@ -305,6 +468,13 @@ def pipeline_thread(config: dict, loop: asyncio.AbstractEventLoop):
                         }
                         for o in tracked_objects
                     ],
+                    "test_mode": {
+                        "active": test_mode_state["active"],
+                        "progress": round(test_mode_state["progress"], 3),
+                        "current_frame": test_mode_state["current_frame"],
+                        "total_frames": test_mode_state["total_frames"],
+                        "filename": test_mode_state["filename"],
+                    },
                 }
 
             # ---- 13. Auto-trigger Groq ----
@@ -321,13 +491,23 @@ def pipeline_thread(config: dict, loop: asyncio.AbstractEventLoop):
                 fps_counter = 0
                 fps_start_time = time.time()
 
+            # ---- Pacing Delay (Prevents video from playing too fast on skipped/fast frames) ----
+            loop_elapsed = time.time() - loop_start
+            target_fps = test_mode_state["video_fps"] if is_test_mode else 30.0
+            target_frame_time = 1.0 / target_fps if target_fps > 0 else 0.033
+            if loop_elapsed < target_frame_time:
+                time.sleep(target_frame_time - loop_elapsed)
+
     except KeyboardInterrupt:
         log.info("Pipeline interrupted")
     except Exception as e:
         log.error(f"Pipeline error: {e}", exc_info=True)
     finally:
         log.info("Pipeline shutting down...")
-        cap.release()
+        if cap:
+            cap.release()
+        if test_cap:
+            test_cap.release()
         cv2.destroyAllWindows()
         voice_engine.stop()
         log.info("Pipeline stopped.")
@@ -369,6 +549,11 @@ def _push_config_sync(config: dict, loop: asyncio.AbstractEventLoop):
 def apply_control(key: str, value):
     """Apply a control command from the dashboard to the running pipeline."""
     log.info(f"Dashboard control: {key} = {value}")
+
+    # Update cache so any new connections get correct state
+    sync_msg = modules.get("_config_sync")
+    if sync_msg and "data" in sync_msg:
+        sync_msg["data"][key] = value
 
     try:
         if key == "volume":
@@ -443,6 +628,10 @@ def apply_control(key: str, value):
             if ve:
                 ve.speak("Replaying last alert.", ve.get_language())
 
+        elif key == "test_mode_stop":
+            log.info("Dashboard: stop test mode requested")
+            test_mode_state["stop_requested"] = True
+
     except Exception as e:
         log.error(f"Control error ({key}): {e}")
 
@@ -453,33 +642,69 @@ def apply_control(key: str, value):
 
 app = FastAPI(title="AI Navigation Assistant Dashboard")
 
-# Serve static dashboard files
+# Dashboard directory paths
 dashboard_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "dashboard")
-app.mount("/static", StaticFiles(directory=dashboard_dir), name="static")
+assets_dir = os.path.join(dashboard_dir, "assets")
 
 
 @app.get("/")
 async def serve_dashboard():
-    """Serve the dashboard index.html."""
+    """Serve the React dashboard index.html."""
     return FileResponse(os.path.join(dashboard_dir, "index.html"))
 
 
-@app.get("/style.css")
-async def serve_css():
-    """Serve the dashboard CSS."""
-    return FileResponse(
-        os.path.join(dashboard_dir, "style.css"),
-        media_type="text/css",
-    )
+@app.post("/api/upload-video")
+def upload_video(file: UploadFile = File(...)):
+    """
+    Upload a test video to process through the AI pipeline.
+    Saves the file to temp_uploads/ and signals the pipeline to switch.
+    """
+    # Validate file type
+    allowed_exts = {".mp4", ".avi", ".mov", ".mkv", ".webm"}
+    ext = os.path.splitext(file.filename or "")[1].lower()
+    if ext not in allowed_exts:
+        return JSONResponse(
+            status_code=400,
+            content={"error": f"Unsupported format: {ext}. Use: {', '.join(allowed_exts)}"}
+        )
+
+    # Save file
+    save_path = os.path.join(UPLOAD_DIR, f"test_video{ext}")
+    try:
+        with open(save_path, "wb") as f:
+            shutil.copyfileobj(file.file, f)
+    except Exception as e:
+        log.error(f"Failed to save uploaded video: {e}")
+        return JSONResponse(status_code=500, content={"error": "Failed to save video"})
+    finally:
+        file.file.close()
+
+    # Signal pipeline to switch to this video
+    test_mode_state["video_path"] = save_path
+    test_mode_state["filename"] = file.filename or "test_video"
+    test_mode_state["switch_requested"] = True
+    test_mode_state["stop_requested"] = False
+    test_mode_state["progress"] = 0.0
+    test_mode_state["current_frame"] = 0
+
+    log.info(f"Test video uploaded: {file.filename} -> {save_path}")
+    return JSONResponse(content={
+        "status": "ok",
+        "filename": file.filename,
+        "path": save_path,
+    })
 
 
-@app.get("/app.js")
-async def serve_js():
-    """Serve the dashboard JavaScript."""
-    return FileResponse(
-        os.path.join(dashboard_dir, "app.js"),
-        media_type="application/javascript",
-    )
+@app.get("/api/test-mode/status")
+async def test_mode_status():
+    """Return current test mode state."""
+    return JSONResponse(content={
+        "active": test_mode_state["active"],
+        "progress": round(test_mode_state["progress"], 3),
+        "current_frame": test_mode_state["current_frame"],
+        "total_frames": test_mode_state["total_frames"],
+        "filename": test_mode_state["filename"],
+    })
 
 
 @app.websocket("/ws")
@@ -562,6 +787,15 @@ async def _ws_receive_loop(websocket: WebSocket):
                     apply_control(key, value)
     except (WebSocketDisconnect, Exception):
         pass
+
+
+# ---- Static file mounts (must be AFTER explicit routes) ----
+# Mount /assets for React's hashed JS/CSS bundles
+if os.path.isdir(assets_dir):
+    app.mount("/assets", StaticFiles(directory=assets_dir), name="assets")
+
+# Mount /static for any other static files in the dashboard folder
+app.mount("/static", StaticFiles(directory=dashboard_dir), name="static")
 
 
 # ============================================================

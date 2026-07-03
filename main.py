@@ -200,12 +200,9 @@ def main():
     cam.start()
     main_logger.info(f"Camera opened — {frame_width}x{frame_height} (async reader)")
 
-    # ---- Startup greeting ----
-    language = voice_engine.get_language()
-    greeting = lm_client.get_startup_greeting(language)
-    if greeting:
-        main_logger.info(f"Startup greeting: {greeting}")
-        voice_engine.speak(greeting, language)
+    # Initial environment scan state
+    initial_scan_triggered = False
+    initial_scan_start_time = 0.0
 
     # ---- FPS tracking ----
     fps_counter = 0
@@ -247,6 +244,30 @@ def main():
             # Resize to standard dimensions
             frame = resize_frame(frame, frame_width, frame_height)
             frame_index += 1
+            language = voice_engine.get_language()
+
+            # Trigger initial environment scan on the very first frame
+            if not initial_scan_triggered:
+                initial_scan_triggered = True
+                initial_scan_start_time = time.time()
+                main_logger.info("STARTUP: Triggering initial environment scene description")
+                voice_engine.speak("Scanning environment. Please stand still.", language)
+                
+                # Run detections on this first frame to feed to the LLM
+                first_detections = detector.detect(frame)
+                if len(first_detections) > 0:
+                    depth_map = depth_estimator.estimate(frame)
+                    for det in first_detections:
+                        det["direction"] = get_direction(
+                            det["center_x"], frame_width, left_boundary, right_boundary
+                        )
+                        det["distance_m"] = depth_estimator.get_distance(depth_map, det["bbox"])
+                
+                # Send the first frame to LLM Vision
+                if lm_client.enabled:
+                    frame_b64 = frame_to_base64(frame)
+                    lm_client.describe_scene_async(frame_b64, first_detections, language)
+                    lm_client.mark_triggered()
 
             # ---- Frame skip: only run AI on every Nth frame ----
             if frame_index % process_every_n == 0:
@@ -275,10 +296,16 @@ def main():
 
                 # ---- 7. Send alerts to voice engine ----
                 language = voice_engine.get_language()
+                speak_info = config.get("voice", {}).get("speak_info_alerts", False)
+                # Silence real-time voice alerts for the first 5 seconds to let the environment scan finish speaking
+                silence_voice = (time.time() - initial_scan_start_time) < 5.0
+                
                 for alert in alerts:
                     message = alert.get_message(language)
                     is_urgent = alert.level == "urgent"
-                    voice_engine.speak(message, language, urgent=is_urgent)
+                    if not silence_voice:
+                        if alert.level != "info" or speak_info:
+                            voice_engine.speak(message, language, urgent=is_urgent)
                     main_logger.info(
                         f"[{alert.level.upper()}] {message} "
                         f"(dist={alert.tracked_object.get('distance_m', '?'):.1f}m, "

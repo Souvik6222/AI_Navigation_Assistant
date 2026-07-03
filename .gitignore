@@ -18,8 +18,13 @@ venv/
 # Application logs and temp files
 *.log
 temp_audio/
+temp_uploads/
 
 # OS files
 .DS_Store
 Thumbs.db
 desktop.ini
+
+# Binaries
+ngrok.exe
+

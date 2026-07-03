@@ -15,7 +15,7 @@ camera:
 
 # --- Object Detection (YOLOv8) ---
 detection:
-  model_path: "yolov8x.onnx"  # ONNX format for faster inference (exported from yolov8x.pt)
+  model_path: "yolov8n.pt"  # ONNX or PT format. Nano model (yolov8n.pt) runs extremely fast on CPU
   confidence_threshold: 0.80
   min_bbox_area_ratio: 0.01   # Minimum bounding box area as fraction of frame (1%)
   target_classes:             # Navigation-critical COCO classes only (trimmed for speed)
@@ -37,15 +37,11 @@ detection:
     # --- Personal items & everyday objects ---
     - bottle
     - cell phone
-    - cup
     - backpack
-    - handbag
     - suitcase
     - laptop
     - umbrella
     - book
-    - tv
-    - remote
 
 # --- Depth Estimation (MiDaS) ---
 depth:
@@ -97,7 +93,8 @@ voice:
   pyttsx3_volume: 1.0            # 0.0 to 1.0
   gtts_lang: "hi"                # gTTS language code for Hindi
   audio_temp_dir: "temp_audio"   # Temporary dir for gTTS mp3 files
-  queue_max_size: 10             # Max queued messages
+  queue_max_size: 1             # Max queued messages (keep small to prevent stale/delayed voice warnings)
+  speak_info_alerts: false      # Set to false to prevent audio clutter for far-away obstacles (they will still appear in visual logs)
 
 # --- LM Studio (Local LLM Brain) ---
 lm_studio:
