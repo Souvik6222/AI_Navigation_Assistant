@@ -1,0 +1,3 @@
+rootProject.name = 'AI_Navigation_Assistant'
+include ':app'
+project(':app').projectDir = file('.')
