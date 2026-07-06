@@ -39,6 +39,7 @@ def export(output_path: str):
         },
         opset_version=12,
         do_constant_folding=True,
+        dynamo=False,
     )
     size_mb = os.path.getsize(output_path) / (1024 * 1024)
     print(f"Done! {output_path} ({size_mb:.1f} MB)")

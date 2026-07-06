@@ -15,6 +15,15 @@ allprojects {
     }
 }
 
+// Fix: CameraX transitively pulls kotlin-stdlib-jdk7/jdk8 which clash with newer stdlib
+configurations.all {
+    resolutionStrategy {
+        force 'org.jetbrains.kotlin:kotlin-stdlib:1.8.22'
+    }
+    exclude group: 'org.jetbrains.kotlin', module: 'kotlin-stdlib-jdk7'
+    exclude group: 'org.jetbrains.kotlin', module: 'kotlin-stdlib-jdk8'
+}
+
 apply plugin: 'com.android.application'
 
 android {
@@ -32,8 +41,19 @@ android {
         externalNativeBuild {
             cmake {
                 cppFlags '-std=c++17 -O3 -march=armv8-a+fp+simd'
-                abiFilters 'arm64-v8a', 'x86_64'
+                abiFilters 'arm64-v8a'
+                arguments "-DOpenCV_DIR=${project.rootDir}/../third_party/android/OpenCV-android-sdk/sdk/native/jni",
+                          "-DONNXRUNTIME_ROOT=${project.rootDir}/../third_party/android/onnxruntime-android"
             }
+        }
+    }
+
+    sourceSets {
+        main {
+            manifest.srcFile 'AndroidManifest.xml'
+            java.srcDirs = ['src']
+            res.srcDirs = ['res']
+            assets.srcDirs = ['assets']
         }
     }
 
@@ -50,8 +70,24 @@ android {
             version '3.22.1'
         }
     }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_1_8
+        targetCompatibility JavaVersion.VERSION_1_8
+    }
 }
 
 dependencies {
     implementation 'androidx.appcompat:appcompat:1.6.1'
+    implementation 'androidx.core:core:1.12.0'
+
+    // CameraX
+    def camerax_version = '1.3.1'
+    implementation "androidx.camera:camera-core:${camerax_version}"
+    implementation "androidx.camera:camera-camera2:${camerax_version}"
+    implementation "androidx.camera:camera-lifecycle:${camerax_version}"
+    implementation "androidx.camera:camera-view:${camerax_version}"
+
+    // Required for CameraX ListenableFuture (avoids Kotlin stdlib clash from full guava)
+    implementation 'androidx.concurrent:concurrent-futures:1.1.0'
 }

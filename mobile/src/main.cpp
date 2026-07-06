@@ -12,9 +12,17 @@ static Config load_config(const std::string& path) {
 
         if (root["performance"]["process_every_n_frames"])
             cfg.process_every_n_frames = root["performance"]["process_every_n_frames"].as<int>();
+        if (root["performance"]["num_threads"])
+            cfg.num_threads = root["performance"]["num_threads"].as<int>();
 
-        if (root["camera"]["device_index"])
-            cfg.cam_index = root["camera"]["device_index"].as<int>();
+        if (root["camera"]["device_index"]) {
+            // Can be string or int. Try string first, fallback to int->string
+            try {
+                cfg.cam_source = root["camera"]["device_index"].as<std::string>();
+            } catch (...) {
+                cfg.cam_source = std::to_string(root["camera"]["device_index"].as<int>());
+            }
+        }
         if (root["camera"]["frame_width"])
             cfg.frame_width = root["camera"]["frame_width"].as<int>();
         if (root["camera"]["frame_height"])
@@ -26,6 +34,9 @@ static Config load_config(const std::string& path) {
             cfg.yolo_model_path = root["detection"]["model_path"].as<std::string>();
         if (root["detection"]["confidence_threshold"])
             cfg.confidence_threshold = root["detection"]["confidence_threshold"].as<float>();
+
+        if (root["depth"]["model_path"])
+            cfg.midas_model_path = root["depth"]["model_path"].as<std::string>();
 
         if (root["depth"]["temporal_smoothing_frames"])
             cfg.temporal_smoothing_frames = root["depth"]["temporal_smoothing_frames"].as<int>();
@@ -91,6 +102,33 @@ int main(int argc, char** argv) {
 
     std::cout << "AI Navigation Assistant — Mobile C++ Port\n";
     std::cout << "========================================\n";
+
+    // Interactive prompt for PC testing
+    std::cout << "\nDo you want to configure inputs interactively? [y/N]: ";
+    std::string ans;
+    std::getline(std::cin, ans);
+    if (ans == "y" || ans == "Y") {
+        std::cout << "Enter Camera IP or 0 for internal webcam [" << config.cam_source << "]: ";
+        std::string cam;
+        std::getline(std::cin, cam);
+        if (!cam.empty()) config.cam_source = cam;
+
+        std::cout << "Enter YOLO model path [" << config.yolo_model_path << "]: ";
+        std::string yolo;
+        std::getline(std::cin, yolo);
+        if (!yolo.empty()) config.yolo_model_path = yolo;
+
+        std::cout << "Enter MiDaS model path [" << config.midas_model_path << "]: ";
+        std::string midas;
+        std::getline(std::cin, midas);
+        if (!midas.empty()) config.midas_model_path = midas;
+    }
+
+    std::cout << "\nStarting pipeline with:\n"
+              << " - Camera: " << config.cam_source << "\n"
+              << " - YOLO:   " << config.yolo_model_path << "\n"
+              << " - MiDaS:  " << config.midas_model_path << "\n"
+              << "========================================\n";
 
     Pipeline pipeline(config);
     return pipeline.run();

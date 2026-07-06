@@ -25,6 +25,10 @@ private:
     Ort::Env env_{nullptr};
     Ort::Session session_{nullptr};
     Ort::MemoryInfo memory_info_{nullptr};
+
+    // Own the allocated strings so the const char* pointers remain valid
+    std::vector<Ort::AllocatedStringPtr> input_names_ptrs_;
+    std::vector<Ort::AllocatedStringPtr> output_names_ptrs_;
     std::vector<const char*> input_names_;
     std::vector<const char*> output_names_;
 

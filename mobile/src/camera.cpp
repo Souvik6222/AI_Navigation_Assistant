@@ -4,7 +4,11 @@
 CameraStream::CameraStream(int source, int width, int height)
     : width_(width), height_(height), use_url_(false)
 {
+#ifdef __ANDROID__
+    cap_.open(source, cv::CAP_ANDROID);
+#else
     cap_.open(source);
+#endif
     if (cap_.isOpened()) {
         cap_.set(cv::CAP_PROP_FRAME_WIDTH, width);
         cap_.set(cv::CAP_PROP_FRAME_HEIGHT, height);
@@ -15,7 +19,11 @@ CameraStream::CameraStream(int source, int width, int height)
 CameraStream::CameraStream(const std::string& url, int width, int height)
     : width_(width), height_(height), url_(url), use_url_(true)
 {
+#ifdef __ANDROID__
+    cap_.open(url, cv::CAP_ANDROID);
+#else
     cap_.open(url);
+#endif
     if (cap_.isOpened()) {
         cap_.set(cv::CAP_PROP_FRAME_WIDTH, width);
         cap_.set(cv::CAP_PROP_FRAME_HEIGHT, height);

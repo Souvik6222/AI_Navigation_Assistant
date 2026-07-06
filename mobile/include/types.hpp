@@ -3,6 +3,7 @@
 #include <vector>
 #include <tuple>
 #include <cstdint>
+#include <unordered_set>
 
 using BBox = std::tuple<float, float, float, float>; // x1, y1, x2, y2
 
@@ -36,9 +37,10 @@ struct Alert {
 struct Config {
     // Performance
     int process_every_n_frames = 3;
+    int num_threads = 4; // Optimal for small ONNX models; too many causes overhead
 
     // Camera
-    int cam_index = 0;
+    std::string cam_source = "0"; // "0" for internal webcam, or URL like "http://ip:port/video"
     int frame_width = 320;
     int frame_height = 240;
     int frame_rotation = 0;
@@ -47,6 +49,7 @@ struct Config {
     std::string yolo_model_path = "models/yolov8n.onnx";
     float confidence_threshold = 0.55f;
     float min_bbox_area_ratio = 0.01f;
+    std::unordered_set<std::string> whitelist = {}; // Empty means allow all
 
     // Depth
     std::string midas_model_path = "models/midas_v21_small_256.onnx";

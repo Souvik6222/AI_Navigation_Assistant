@@ -2,6 +2,8 @@
 #include <algorithm>
 #include <cmath>
 #include <limits>
+#include <unordered_set>
+#include <opencv2/core.hpp>
 
 ObjectTracker::ObjectTracker(const Config& config)
     : cooldown_seconds_(config.alert_cooldown_seconds)
@@ -82,8 +84,18 @@ std::vector<TrackedObject> ObjectTracker::update(
                 auto [ox1, oy1, ox2, oy2] = state.bbox;
                 float ocx = (ox1 + ox2) / 2.0f;
                 float ocy = (oy1 + oy2) / 2.0f;
-                state.vel_x = (det.center_x - ocx) / dt;
-                state.vel_y = (det.center_y - ocy) / dt;
+                float inst_vel_x = (det.center_x - ocx) / dt;
+                float inst_vel_y = (det.center_y - ocy) / dt;
+                
+                // Exponential Moving Average (EMA) for smoother velocity
+                const float alpha = 0.3f;
+                if (state.tracked_frames == 0) {
+                    state.vel_x = inst_vel_x;
+                    state.vel_y = inst_vel_y;
+                } else {
+                    state.vel_x = alpha * inst_vel_x + (1.0f - alpha) * state.vel_x;
+                    state.vel_y = alpha * inst_vel_y + (1.0f - alpha) * state.vel_y;
+                }
             }
 
             state.tracked_frames++;

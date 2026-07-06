@@ -10,23 +10,25 @@ set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 if(NOT DEFINED ONNXRUNTIME_ROOT)
     set(ONNXRUNTIME_ROOT "/usr/local" CACHE PATH "ONNX Runtime install prefix")
 endif()
-find_library(ONNX_LIB onnxruntime PATHS ${ONNXRUNTIME_ROOT}/lib NO_DEFAULT_PATH)
+find_library(ONNX_LIB onnxruntime PATHS ${ONNXRUNTIME_ROOT}/lib ${ONNXRUNTIME_ROOT}/jni/${ANDROID_ABI} NO_DEFAULT_PATH NO_CMAKE_FIND_ROOT_PATH)
 if(NOT ONNX_LIB)
     find_library(ONNX_LIB onnxruntime)
 endif()
 find_path(ONNX_INCLUDE_DIR onnxruntime_cxx_api.h
     PATHS ${ONNXRUNTIME_ROOT}/include
     ${ONNXRUNTIME_ROOT}/include/onnxruntime
+    ${ONNXRUNTIME_ROOT}/headers
     /usr/include/onnxruntime
     /usr/local/include/onnxruntime
     NO_DEFAULT_PATH
+    NO_CMAKE_FIND_ROOT_PATH
 )
 if(NOT ONNX_INCLUDE_DIR)
     find_path(ONNX_INCLUDE_DIR onnxruntime_cxx_api.h)
 endif()
 
 # OpenCV
-find_package(OpenCV REQUIRED COMPONENTS core imgproc highgui imgcodecs videoio)
+find_package(OpenCV REQUIRED COMPONENTS core imgproc highgui imgcodecs videoio dnn)
 
 # yaml-cpp
 find_package(yaml-cpp QUIET)
@@ -38,6 +40,11 @@ if(NOT yaml-cpp_FOUND)
         GIT_TAG yaml-cpp-0.7.0
     )
     FetchContent_MakeAvailable(yaml-cpp)
+endif()
+
+# Curl (for LM Studio HTTP client)
+if(NOT ANDROID)
+    find_package(CURL REQUIRED)
 endif()
 
 # ---- Sources ----
@@ -52,6 +59,9 @@ set(SOURCES
     src/frame_utils.cpp
     src/camera.cpp
 )
+if(NOT ANDROID)
+    list(APPEND SOURCES src/llm_client.cpp)
+endif()
 
 set(HEADERS
     include/types.hpp
@@ -63,10 +73,18 @@ set(HEADERS
     include/direction.hpp
     include/frame_utils.hpp
     include/camera.hpp
+    include/llm_client.hpp
 )
 
-# ---- Executable ----
-add_executable(${PROJECT_NAME} ${SOURCES} ${HEADERS})
+# ---- Executable / Library ----
+if(ANDROID)
+    list(REMOVE_ITEM SOURCES src/main.cpp)
+    list(APPEND SOURCES android/src/jni_bridge.cpp)
+    add_library(${PROJECT_NAME} SHARED ${SOURCES} ${HEADERS})
+else()
+    add_executable(${PROJECT_NAME} ${SOURCES} ${HEADERS})
+endif()
+
 target_include_directories(${PROJECT_NAME} PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/include
     ${OpenCV_INCLUDE_DIRS}
@@ -78,10 +96,15 @@ target_link_libraries(${PROJECT_NAME} PRIVATE
     ${ONNX_LIB}
     yaml-cpp::yaml-cpp
 )
+if(NOT ANDROID)
+    target_link_libraries(${PROJECT_NAME} PRIVATE ${CURL_LIBRARIES})
+endif()
 
-# Platform-specific: pthread, rt
-if(UNIX)
+# Platform-specific: pthread, rt, log, android
+if(UNIX AND NOT ANDROID)
     target_link_libraries(${PROJECT_NAME} PRIVATE pthread rt)
+elseif(ANDROID)
+    target_link_libraries(${PROJECT_NAME} PRIVATE log android)
 endif()
 
 # ---- Install ----

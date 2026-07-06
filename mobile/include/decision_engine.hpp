@@ -3,6 +3,7 @@
 #include <vector>
 #include <string>
 #include <unordered_set>
+#include <optional>
 
 class ObjectTracker;
 
@@ -14,8 +15,8 @@ public:
     std::vector<Alert> evaluate(const std::vector<TrackedObject>& objects);
 
 private:
-    Alert* check_path_clear(const std::vector<TrackedObject>& objects);
-    Alert* create_alert(const TrackedObject& obj);
+    std::optional<Alert> check_path_clear(const std::vector<TrackedObject>& objects);
+    std::optional<Alert> create_alert(const TrackedObject& obj, size_t count = 1);
 
     float urgent_threshold_, warning_threshold_, info_threshold_;
     int max_alerts_;

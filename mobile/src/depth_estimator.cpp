@@ -1,8 +1,14 @@
 #include "depth_estimator.hpp"
 #include <opencv2/dnn.hpp>
+#ifdef __ANDROID__
+#include <nnapi_provider_factory.h>
+#endif
+#include <opencv2/imgproc.hpp>
 #include <numeric>
 #include <algorithm>
 #include <cmath>
+#include <iostream>
+#include <thread>
 
 static constexpr int REFERENCE_WINDOW = 30;
 
@@ -15,14 +21,27 @@ DepthEstimator::DepthEstimator(const Config& config)
 {
     env_ = Ort::Env(OrtLoggingLevel::ORT_LOGGING_LEVEL_WARNING, "depth");
     Ort::SessionOptions opts;
-    opts.SetIntraOpNumThreads(1);
+    opts.SetIntraOpNumThreads(config.num_threads);
     opts.SetGraphOptimizationLevel(GraphOptimizationLevel::ORT_ENABLE_EXTENDED);
+
+#ifdef __ANDROID__
+    // NNAPI DISABLED: concurrent NNAPI sessions crash on Android 11 (libneuralnetworks CHECK).
+    // Use 6 CPU threads — MiDaS-small-256 benefits from intra-op parallelism on A55+A76 cores.
+    opts.SetIntraOpNumThreads(6);
+    opts.SetInterOpNumThreads(1);
+#endif
 
     session_ = Ort::Session(env_, config.midas_model_path.c_str(), opts);
 
+    // Store AllocatedStringPtr to prevent dangling pointers
     Ort::AllocatorWithDefaultOptions alloc;
-    input_names_.push_back(session_.GetInputNameAllocated(0, alloc).get());
-    output_names_.push_back(session_.GetOutputNameAllocated(0, alloc).get());
+    auto input_name = session_.GetInputNameAllocated(0, alloc);
+    input_names_.push_back(input_name.get());
+    input_names_ptrs_.push_back(std::move(input_name));
+
+    auto output_name = session_.GetOutputNameAllocated(0, alloc);
+    output_names_.push_back(output_name.get());
+    output_names_ptrs_.push_back(std::move(output_name));
 
     memory_info_ = Ort::MemoryInfo::CreateCpu(OrtAllocatorType::OrtArenaAllocator,
                                                OrtMemType::OrtMemTypeDefault);
@@ -54,8 +73,15 @@ cv::Mat DepthEstimator::estimate(const cv::Mat& frame) {
 
     auto* raw_data = outputs[0].GetTensorMutableData<float>();
     auto output_shape = outputs[0].GetTensorTypeAndShapeInfo().GetShape();
-    int out_h = (int)output_shape[2];
-    int out_w = (int)output_shape[3];
+    int out_h = 256;
+    int out_w = 256;
+    if (output_shape.size() >= 4) {
+        out_h = (int)output_shape[2];
+        out_w = (int)output_shape[3];
+    } else if (output_shape.size() == 3) {
+        out_h = (int)output_shape[1];
+        out_w = (int)output_shape[2];
+    }
 
     cv::Mat raw_depth(out_h, out_w, CV_32F, raw_data);
 

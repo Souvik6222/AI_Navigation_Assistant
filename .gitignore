@@ -8,6 +8,8 @@ env/
 venv/
 .venv/
 
+.neo/export/
+
 # Environment variables / secrets
 .env
 
@@ -26,3 +28,4 @@ desktop.ini
 # Session exports
 session-*.md
 neo/exports/
+neo/export/

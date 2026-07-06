@@ -5,6 +5,8 @@
 #include <memory>
 #include <vector>
 #include <string>
+#include <array>
+#include <unordered_set>
 
 class ObjectDetector {
 public:
@@ -16,19 +18,25 @@ public:
 private:
     std::vector<Detection> postprocess(
         const cv::Mat& frame,
-        const std::vector<Ort::Value>& outputs,
+        std::vector<Ort::Value>& outputs,
         float frame_area, float min_area
     );
 
     float confidence_threshold_;
     float min_bbox_area_ratio_;
     float iou_threshold_ = 0.5f;
+    std::unordered_set<std::string> whitelist_;
 
     Ort::Env env_{nullptr};
     Ort::Session session_{nullptr};
     Ort::MemoryInfo memory_info_{nullptr};
+
+    // Own the allocated strings so the const char* pointers remain valid
+    std::vector<Ort::AllocatedStringPtr> input_names_ptrs_;
+    std::vector<Ort::AllocatedStringPtr> output_names_ptrs_;
     std::vector<const char*> input_names_;
     std::vector<const char*> output_names_;
+
     int input_h_ = 640;
     int input_w_ = 640;
 };
