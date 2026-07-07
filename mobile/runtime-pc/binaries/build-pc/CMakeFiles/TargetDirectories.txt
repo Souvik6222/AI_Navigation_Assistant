@@ -1,0 +1,7 @@
+/home/vista/class/class_project/AI_Navigation_Assistant/mobile/runtime-pc/binaries/build-pc/CMakeFiles/ai_navigation_assistant.dir
+/home/vista/class/class_project/AI_Navigation_Assistant/mobile/runtime-pc/binaries/build-pc/CMakeFiles/edit_cache.dir
+/home/vista/class/class_project/AI_Navigation_Assistant/mobile/runtime-pc/binaries/build-pc/CMakeFiles/rebuild_cache.dir
+/home/vista/class/class_project/AI_Navigation_Assistant/mobile/runtime-pc/binaries/build-pc/CMakeFiles/list_install_components.dir
+/home/vista/class/class_project/AI_Navigation_Assistant/mobile/runtime-pc/binaries/build-pc/CMakeFiles/install.dir
+/home/vista/class/class_project/AI_Navigation_Assistant/mobile/runtime-pc/binaries/build-pc/CMakeFiles/install/local.dir
+/home/vista/class/class_project/AI_Navigation_Assistant/mobile/runtime-pc/binaries/build-pc/CMakeFiles/install/strip.dir

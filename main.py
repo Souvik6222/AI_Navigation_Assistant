@@ -262,16 +262,15 @@ def main():
                 # ---- 2. YOLOv8 Detection ----
                 detections = detector.detect(frame)
 
-                # ---- 3. MiDaS Depth Estimation (CONDITIONAL) ----
-                # Only run the heavy depth model if objects were detected
+                # ---- 3. MiDaS Depth Estimation (conditional) ----
                 if len(detections) > 0:
                     depth_map = depth_estimator.estimate(frame)
-
-                    # ---- 4. Enrich detections with direction + distance ----
                     for det in detections:
+                        # Direction
                         det["direction"] = get_direction(
                             det["center_x"], frame_width, left_boundary, right_boundary
                         )
+                        # Distance
                         det["distance_m"] = depth_estimator.get_distance(depth_map, det["bbox"])
 
                 # ---- 5. Update tracker ----
@@ -287,9 +286,11 @@ def main():
                     message = alert.get_message(language)
                     is_urgent = alert.level == "urgent"
                     voice_engine.speak(message, language, urgent=is_urgent)
+                    dist_val = alert.tracked_object.get("distance_m", "?")
+                    dist_str = f"{dist_val:.1f}m" if isinstance(dist_val, (int, float)) else "?"
                     main_logger.info(
                         f"[{alert.level.upper()}] {message} "
-                        f"(dist={alert.tracked_object.get('distance_m', '?'):.1f}m, "
+                        f"(dist={dist_str}, "
                         f"id={alert.tracked_object.get('track_id', '?')})"
                     )
 
@@ -310,12 +311,6 @@ def main():
                 annotated_frame = annotate_frame(frame, tracked_objects)
                 cached_annotated_frame = annotated_frame
 
-                # ---- 12. Auto-trigger LM Studio scene description ----
-                if lm_client.should_auto_trigger() and len(detections) > 0:
-                    frame_b64 = frame_to_base64(annotated_frame)
-                    lm_client.describe_scene_async(frame_b64, detections, language)
-                    lm_client.mark_triggered()
-
             else:
                 # Skipped frame: reuse cached annotations on the new frame
                 annotated_frame = (
@@ -323,8 +318,8 @@ def main():
                     if cached_tracked_objects
                     else frame
                 )
-
-            # ---- 9. Status bar (always drawn) ----
+    
+            # ---- 9. Status bar ----
             annotated_frame = draw_status_bar(
                 annotated_frame,
                 language=language,
@@ -337,7 +332,13 @@ def main():
             if show_window:
                 cv2.imshow(window_name, annotated_frame)
 
-            # ---- 11. Keyboard input ----
+            # ---- 12. Auto-trigger LM Studio scene description ----
+            if lm_client.should_auto_trigger() and len(detections) > 0:
+                frame_b64 = frame_to_base64(annotated_frame)
+                lm_client.describe_scene_async(frame_b64, detections, language)
+                lm_client.mark_triggered()
+
+            # ---- 13. Keyboard input ----
             key = cv2.waitKey(1) & 0xFF
 
             if key == ord("q") or key == 27:  # Q or ESC
