@@ -1,0 +1,14 @@
+build/
+out/
+cmake-build-*
+*.o
+*.obj
+*.exe
+*.so
+*.a
+*.dylib
+.DS_Store
+android/.gradle/
+android/build/
+android/local.properties
+android/captures/
