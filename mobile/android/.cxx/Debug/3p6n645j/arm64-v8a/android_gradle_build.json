@@ -1,0 +1,219 @@
+{
+  "buildFiles": [
+    "/home/vista/class/class_project/AI_Navigation_Assistant/mobile/CMakeLists.txt",
+    "/home/vista/class/class_project/AI_Navigation_Assistant/mobile/android/.cxx/Debug/3p6n645j/arm64-v8a/_deps/yaml-cpp-src/CMakeLists.txt",
+    "/home/vista/class/class_project/AI_Navigation_Assistant/mobile/android/.cxx/Debug/3p6n645j/arm64-v8a/_deps/yaml-cpp-src/util/CMakeLists.txt",
+    "/home/vista/class/class_project/AI_Navigation_Assistant/mobile/third_party/android/OpenCV-android-sdk/sdk/native/jni/OpenCVConfig-version.cmake",
+    "/home/vista/class/class_project/AI_Navigation_Assistant/mobile/third_party/android/OpenCV-android-sdk/sdk/native/jni/OpenCVConfig.cmake",
+    "/home/vista/class/class_project/AI_Navigation_Assistant/mobile/third_party/android/OpenCV-android-sdk/sdk/native/jni/abi-arm64-v8a/OpenCVConfig.cmake",
+    "/home/vista/class/class_project/AI_Navigation_Assistant/mobile/third_party/android/OpenCV-android-sdk/sdk/native/jni/abi-arm64-v8a/OpenCVModules-release.cmake",
+    "/home/vista/class/class_project/AI_Navigation_Assistant/mobile/third_party/android/OpenCV-android-sdk/sdk/native/jni/abi-arm64-v8a/OpenCVModules.cmake"
+  ],
+  "cleanCommandsComponents": [
+    [
+      "/opt/android-sdk/cmake/3.22.1/bin/ninja",
+      "-C",
+      "/home/vista/class/class_project/AI_Navigation_Assistant/mobile/android/.cxx/Debug/3p6n645j/arm64-v8a",
+      "clean"
+    ]
+  ],
+  "buildTargetsCommandComponents": [
+    "/opt/android-sdk/cmake/3.22.1/bin/ninja",
+    "-C",
+    "/home/vista/class/class_project/AI_Navigation_Assistant/mobile/android/.cxx/Debug/3p6n645j/arm64-v8a",
+    "{LIST_OF_TARGETS_TO_BUILD}"
+  ],
+  "libraries": {
+    "Continuous::@c1fb6b535d5396bcd0b2": {
+      "toolchain": "toolchain",
+      "abi": "arm64-v8a",
+      "artifactName": "Continuous"
+    },
+    "ContinuousBuild::@c1fb6b535d5396bcd0b2": {
+      "toolchain": "toolchain",
+      "abi": "arm64-v8a",
+      "artifactName": "ContinuousBuild"
+    },
+    "ContinuousConfigure::@c1fb6b535d5396bcd0b2": {
+      "toolchain": "toolchain",
+      "abi": "arm64-v8a",
+      "artifactName": "ContinuousConfigure"
+    },
+    "ContinuousCoverage::@c1fb6b535d5396bcd0b2": {
+      "toolchain": "toolchain",
+      "abi": "arm64-v8a",
+      "artifactName": "ContinuousCoverage"
+    },
+    "ContinuousMemCheck::@c1fb6b535d5396bcd0b2": {
+      "toolchain": "toolchain",
+      "abi": "arm64-v8a",
+      "artifactName": "ContinuousMemCheck"
+    },
+    "ContinuousStart::@c1fb6b535d5396bcd0b2": {
+      "toolchain": "toolchain",
+      "abi": "arm64-v8a",
+      "artifactName": "ContinuousStart"
+    },
+    "ContinuousSubmit::@c1fb6b535d5396bcd0b2": {
+      "toolchain": "toolchain",
+      "abi": "arm64-v8a",
+      "artifactName": "ContinuousSubmit"
+    },
+    "ContinuousTest::@c1fb6b535d5396bcd0b2": {
+      "toolchain": "toolchain",
+      "abi": "arm64-v8a",
+      "artifactName": "ContinuousTest"
+    },
+    "ContinuousUpdate::@c1fb6b535d5396bcd0b2": {
+      "toolchain": "toolchain",
+      "abi": "arm64-v8a",
+      "artifactName": "ContinuousUpdate"
+    },
+    "Experimental::@c1fb6b535d5396bcd0b2": {
+      "toolchain": "toolchain",
+      "abi": "arm64-v8a",
+      "artifactName": "Experimental"
+    },
+    "ExperimentalBuild::@c1fb6b535d5396bcd0b2": {
+      "toolchain": "toolchain",
+      "abi": "arm64-v8a",
+      "artifactName": "ExperimentalBuild"
+    },
+    "ExperimentalConfigure::@c1fb6b535d5396bcd0b2": {
+      "toolchain": "toolchain",
+      "abi": "arm64-v8a",
+      "artifactName": "ExperimentalConfigure"
+    },
+    "ExperimentalCoverage::@c1fb6b535d5396bcd0b2": {
+      "toolchain": "toolchain",
+      "abi": "arm64-v8a",
+      "artifactName": "ExperimentalCoverage"
+    },
+    "ExperimentalMemCheck::@c1fb6b535d5396bcd0b2": {
+      "toolchain": "toolchain",
+      "abi": "arm64-v8a",
+      "artifactName": "ExperimentalMemCheck"
+    },
+    "ExperimentalStart::@c1fb6b535d5396bcd0b2": {
+      "toolchain": "toolchain",
+      "abi": "arm64-v8a",
+      "artifactName": "ExperimentalStart"
+    },
+    "ExperimentalSubmit::@c1fb6b535d5396bcd0b2": {
+      "toolchain": "toolchain",
+      "abi": "arm64-v8a",
+      "artifactName": "ExperimentalSubmit"
+    },
+    "ExperimentalTest::@c1fb6b535d5396bcd0b2": {
+      "toolchain": "toolchain",
+      "abi": "arm64-v8a",
+      "artifactName": "ExperimentalTest"
+    },
+    "ExperimentalUpdate::@c1fb6b535d5396bcd0b2": {
+      "toolchain": "toolchain",
+      "abi": "arm64-v8a",
+      "artifactName": "ExperimentalUpdate"
+    },
+    "Nightly::@c1fb6b535d5396bcd0b2": {
+      "toolchain": "toolchain",
+      "abi": "arm64-v8a",
+      "artifactName": "Nightly"
+    },
+    "NightlyBuild::@c1fb6b535d5396bcd0b2": {
+      "toolchain": "toolchain",
+      "abi": "arm64-v8a",
+      "artifactName": "NightlyBuild"
+    },
+    "NightlyConfigure::@c1fb6b535d5396bcd0b2": {
+      "toolchain": "toolchain",
+      "abi": "arm64-v8a",
+      "artifactName": "NightlyConfigure"
+    },
+    "NightlyCoverage::@c1fb6b535d5396bcd0b2": {
+      "toolchain": "toolchain",
+      "abi": "arm64-v8a",
+      "artifactName": "NightlyCoverage"
+    },
+    "NightlyMemCheck::@c1fb6b535d5396bcd0b2": {
+      "toolchain": "toolchain",
+      "abi": "arm64-v8a",
+      "artifactName": "NightlyMemCheck"
+    },
+    "NightlyMemoryCheck::@c1fb6b535d5396bcd0b2": {
+      "toolchain": "toolchain",
+      "abi": "arm64-v8a",
+      "artifactName": "NightlyMemoryCheck"
+    },
+    "NightlyStart::@c1fb6b535d5396bcd0b2": {
+      "toolchain": "toolchain",
+      "abi": "arm64-v8a",
+      "artifactName": "NightlyStart"
+    },
+    "NightlySubmit::@c1fb6b535d5396bcd0b2": {
+      "toolchain": "toolchain",
+      "abi": "arm64-v8a",
+      "artifactName": "NightlySubmit"
+    },
+    "NightlyTest::@c1fb6b535d5396bcd0b2": {
+      "toolchain": "toolchain",
+      "abi": "arm64-v8a",
+      "artifactName": "NightlyTest"
+    },
+    "NightlyUpdate::@c1fb6b535d5396bcd0b2": {
+      "toolchain": "toolchain",
+      "abi": "arm64-v8a",
+      "artifactName": "NightlyUpdate"
+    },
+    "ai_navigation_assistant::@6890427a1f51a3e7e1df": {
+      "toolchain": "toolchain",
+      "abi": "arm64-v8a",
+      "artifactName": "ai_navigation_assistant",
+      "output": "/home/vista/class/class_project/AI_Navigation_Assistant/mobile/android/build/intermediates/cxx/Debug/3p6n645j/obj/arm64-v8a/libai_navigation_assistant.so",
+      "runtimeFiles": [
+        "/home/vista/class/class_project/AI_Navigation_Assistant/mobile/third_party/android/onnxruntime-android/jni/arm64-v8a/libonnxruntime.so"
+      ]
+    },
+    "format::@c1fb6b535d5396bcd0b2": {
+      "toolchain": "toolchain",
+      "abi": "arm64-v8a",
+      "artifactName": "format"
+    },
+    "yaml-cpp::@c1fb6b535d5396bcd0b2": {
+      "toolchain": "toolchain",
+      "abi": "arm64-v8a",
+      "artifactName": "yaml-cpp",
+      "output": "/home/vista/class/class_project/AI_Navigation_Assistant/mobile/android/.cxx/Debug/3p6n645j/arm64-v8a/_deps/yaml-cpp-build/libyaml-cppd.a"
+    },
+    "yaml-cpp-parse::@fc0e65436a078e37eaec": {
+      "toolchain": "toolchain",
+      "abi": "arm64-v8a",
+      "artifactName": "yaml-cpp-parse",
+      "output": "/home/vista/class/class_project/AI_Navigation_Assistant/mobile/android/build/intermediates/cxx/Debug/3p6n645j/obj/arm64-v8a/parse",
+      "runtimeFiles": []
+    },
+    "yaml-cpp-read::@fc0e65436a078e37eaec": {
+      "toolchain": "toolchain",
+      "abi": "arm64-v8a",
+      "artifactName": "yaml-cpp-read",
+      "output": "/home/vista/class/class_project/AI_Navigation_Assistant/mobile/android/build/intermediates/cxx/Debug/3p6n645j/obj/arm64-v8a/read",
+      "runtimeFiles": []
+    },
+    "yaml-cpp-sandbox::@fc0e65436a078e37eaec": {
+      "toolchain": "toolchain",
+      "abi": "arm64-v8a",
+      "artifactName": "yaml-cpp-sandbox",
+      "output": "/home/vista/class/class_project/AI_Navigation_Assistant/mobile/android/build/intermediates/cxx/Debug/3p6n645j/obj/arm64-v8a/sandbox",
+      "runtimeFiles": []
+    }
+  },
+  "toolchains": {
+    "toolchain": {
+      "cCompilerExecutable": "/opt/android-sdk/ndk/27.0.12077973/toolchains/llvm/prebuilt/linux-x86_64/bin/clang.lld",
+      "cppCompilerExecutable": "/opt/android-sdk/ndk/27.0.12077973/toolchains/llvm/prebuilt/linux-x86_64/bin/clang++.lld"
+    }
+  },
+  "cFileExtensions": [],
+  "cppFileExtensions": [
+    "cpp"
+  ]
+}

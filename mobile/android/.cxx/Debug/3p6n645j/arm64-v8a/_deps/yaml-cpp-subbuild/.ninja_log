@@ -1,0 +1,21 @@
+# ninja log v5
+0	12	1783183995114202408	yaml-cpp-populate-prefix/src/yaml-cpp-populate-stamp/yaml-cpp-populate-mkdir	ed29879110c042d2
+0	12	1783183995114202408	/home/vista/class/class_project/AI_Navigation_Assistant/mobile/android/.cxx/Debug/3p6n645j/arm64-v8a/_deps/yaml-cpp-subbuild/yaml-cpp-populate-prefix/src/yaml-cpp-populate-stamp/yaml-cpp-populate-mkdir	ed29879110c042d2
+12	1819	1783183996921111555	yaml-cpp-populate-prefix/src/yaml-cpp-populate-stamp/yaml-cpp-populate-download	87ed1babfe6bd653
+12	1819	1783183996921111555	/home/vista/class/class_project/AI_Navigation_Assistant/mobile/android/.cxx/Debug/3p6n645j/arm64-v8a/_deps/yaml-cpp-subbuild/yaml-cpp-populate-prefix/src/yaml-cpp-populate-stamp/yaml-cpp-populate-download	87ed1babfe6bd653
+1819	1826	0	yaml-cpp-populate-prefix/src/yaml-cpp-populate-stamp/yaml-cpp-populate-update	58c5f3c914e16e75
+1819	1826	0	/home/vista/class/class_project/AI_Navigation_Assistant/mobile/android/.cxx/Debug/3p6n645j/arm64-v8a/_deps/yaml-cpp-subbuild/yaml-cpp-populate-prefix/src/yaml-cpp-populate-stamp/yaml-cpp-populate-update	58c5f3c914e16e75
+1826	1829	1783183996931111055	yaml-cpp-populate-prefix/src/yaml-cpp-populate-stamp/yaml-cpp-populate-patch	84ac51c4ad241d59
+1826	1829	1783183996931111055	/home/vista/class/class_project/AI_Navigation_Assistant/mobile/android/.cxx/Debug/3p6n645j/arm64-v8a/_deps/yaml-cpp-subbuild/yaml-cpp-populate-prefix/src/yaml-cpp-populate-stamp/yaml-cpp-populate-patch	84ac51c4ad241d59
+1829	1834	1783183996936110804	yaml-cpp-populate-prefix/src/yaml-cpp-populate-stamp/yaml-cpp-populate-configure	6f88e101a68a6696
+1829	1834	1783183996936110804	/home/vista/class/class_project/AI_Navigation_Assistant/mobile/android/.cxx/Debug/3p6n645j/arm64-v8a/_deps/yaml-cpp-subbuild/yaml-cpp-populate-prefix/src/yaml-cpp-populate-stamp/yaml-cpp-populate-configure	6f88e101a68a6696
+1834	1838	1783183996939110654	yaml-cpp-populate-prefix/src/yaml-cpp-populate-stamp/yaml-cpp-populate-build	99a43d436e11278b
+1834	1838	1783183996939110654	/home/vista/class/class_project/AI_Navigation_Assistant/mobile/android/.cxx/Debug/3p6n645j/arm64-v8a/_deps/yaml-cpp-subbuild/yaml-cpp-populate-prefix/src/yaml-cpp-populate-stamp/yaml-cpp-populate-build	99a43d436e11278b
+1838	1841	1783183996943110454	yaml-cpp-populate-prefix/src/yaml-cpp-populate-stamp/yaml-cpp-populate-install	84d59f967167dd35
+1838	1841	1783183996943110454	/home/vista/class/class_project/AI_Navigation_Assistant/mobile/android/.cxx/Debug/3p6n645j/arm64-v8a/_deps/yaml-cpp-subbuild/yaml-cpp-populate-prefix/src/yaml-cpp-populate-stamp/yaml-cpp-populate-install	84d59f967167dd35
+1841	1845	1783183996947110254	yaml-cpp-populate-prefix/src/yaml-cpp-populate-stamp/yaml-cpp-populate-test	5879fb84d030e48e
+1841	1845	1783183996947110254	/home/vista/class/class_project/AI_Navigation_Assistant/mobile/android/.cxx/Debug/3p6n645j/arm64-v8a/_deps/yaml-cpp-subbuild/yaml-cpp-populate-prefix/src/yaml-cpp-populate-stamp/yaml-cpp-populate-test	5879fb84d030e48e
+1845	1850	1783183996952110003	CMakeFiles/yaml-cpp-populate-complete	aa1180ca5889efc8
+1845	1850	1783183996952110003	yaml-cpp-populate-prefix/src/yaml-cpp-populate-stamp/yaml-cpp-populate-done	aa1180ca5889efc8
+1845	1850	1783183996952110003	/home/vista/class/class_project/AI_Navigation_Assistant/mobile/android/.cxx/Debug/3p6n645j/arm64-v8a/_deps/yaml-cpp-subbuild/CMakeFiles/yaml-cpp-populate-complete	aa1180ca5889efc8
+1845	1850	1783183996952110003	/home/vista/class/class_project/AI_Navigation_Assistant/mobile/android/.cxx/Debug/3p6n645j/arm64-v8a/_deps/yaml-cpp-subbuild/yaml-cpp-populate-prefix/src/yaml-cpp-populate-stamp/yaml-cpp-populate-done	aa1180ca5889efc8

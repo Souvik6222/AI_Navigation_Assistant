@@ -1,0 +1,205 @@
+{
+  "buildFiles": [
+    "/home/vista/class/class_project/AI_Navigation_Assistant/mobile/CMakeLists.txt",
+    "/home/vista/class/class_project/AI_Navigation_Assistant/mobile/android/.cxx/Debug/3p6n645j/arm64-v8a/_deps/yaml-cpp-src/CMakeLists.txt",
+    "/home/vista/class/class_project/AI_Navigation_Assistant/mobile/android/.cxx/Debug/3p6n645j/arm64-v8a/_deps/yaml-cpp-src/util/CMakeLists.txt",
+    "/home/vista/class/class_project/AI_Navigation_Assistant/mobile/third_party/android/OpenCV-android-sdk/sdk/native/jni/OpenCVConfig-version.cmake",
+    "/home/vista/class/class_project/AI_Navigation_Assistant/mobile/third_party/android/OpenCV-android-sdk/sdk/native/jni/OpenCVConfig.cmake",
+    "/home/vista/class/class_project/AI_Navigation_Assistant/mobile/third_party/android/OpenCV-android-sdk/sdk/native/jni/abi-arm64-v8a/OpenCVConfig.cmake",
+    "/home/vista/class/class_project/AI_Navigation_Assistant/mobile/third_party/android/OpenCV-android-sdk/sdk/native/jni/abi-arm64-v8a/OpenCVModules-release.cmake",
+    "/home/vista/class/class_project/AI_Navigation_Assistant/mobile/third_party/android/OpenCV-android-sdk/sdk/native/jni/abi-arm64-v8a/OpenCVModules.cmake"
+  ],
+  "cleanCommandsComponents": [
+    [
+      "/opt/android-sdk/cmake/3.22.1/bin/ninja",
+      "-C",
+      "/home/vista/class/class_project/AI_Navigation_Assistant/mobile/android/.cxx/Debug/3p6n645j/arm64-v8a",
+      "clean"
+    ]
+  ],
+  "buildTargetsCommandComponents": [
+    "/opt/android-sdk/cmake/3.22.1/bin/ninja",
+    "-C",
+    "/home/vista/class/class_project/AI_Navigation_Assistant/mobile/android/.cxx/Debug/3p6n645j/arm64-v8a",
+    "{LIST_OF_TARGETS_TO_BUILD}"
+  ],
+  "libraries": {
+    "NightlyUpdate::@c1fb6b535d5396bcd0b2": {
+      "artifactName": "NightlyUpdate",
+      "abi": "arm64-v8a",
+      "runtimeFiles": []
+    },
+    "format::@c1fb6b535d5396bcd0b2": {
+      "artifactName": "format",
+      "abi": "arm64-v8a",
+      "runtimeFiles": []
+    },
+    "ExperimentalCoverage::@c1fb6b535d5396bcd0b2": {
+      "artifactName": "ExperimentalCoverage",
+      "abi": "arm64-v8a",
+      "runtimeFiles": []
+    },
+    "ContinuousUpdate::@c1fb6b535d5396bcd0b2": {
+      "artifactName": "ContinuousUpdate",
+      "abi": "arm64-v8a",
+      "runtimeFiles": []
+    },
+    "ExperimentalStart::@c1fb6b535d5396bcd0b2": {
+      "artifactName": "ExperimentalStart",
+      "abi": "arm64-v8a",
+      "runtimeFiles": []
+    },
+    "ai_navigation_assistant::@6890427a1f51a3e7e1df": {
+      "artifactName": "ai_navigation_assistant",
+      "abi": "arm64-v8a",
+      "output": "/home/vista/class/class_project/AI_Navigation_Assistant/mobile/android/build/intermediates/cxx/Debug/3p6n645j/obj/arm64-v8a/libai_navigation_assistant.so",
+      "runtimeFiles": [
+        "/home/vista/class/class_project/AI_Navigation_Assistant/mobile/third_party/android/onnxruntime-android/jni/arm64-v8a/libonnxruntime.so"
+      ]
+    },
+    "NightlyTest::@c1fb6b535d5396bcd0b2": {
+      "artifactName": "NightlyTest",
+      "abi": "arm64-v8a",
+      "runtimeFiles": []
+    },
+    "NightlySubmit::@c1fb6b535d5396bcd0b2": {
+      "artifactName": "NightlySubmit",
+      "abi": "arm64-v8a",
+      "runtimeFiles": []
+    },
+    "ExperimentalTest::@c1fb6b535d5396bcd0b2": {
+      "artifactName": "ExperimentalTest",
+      "abi": "arm64-v8a",
+      "runtimeFiles": []
+    },
+    "ContinuousStart::@c1fb6b535d5396bcd0b2": {
+      "artifactName": "ContinuousStart",
+      "abi": "arm64-v8a",
+      "runtimeFiles": []
+    },
+    "yaml-cpp::@c1fb6b535d5396bcd0b2": {
+      "artifactName": "yaml-cpp",
+      "abi": "arm64-v8a",
+      "output": "/home/vista/class/class_project/AI_Navigation_Assistant/mobile/android/.cxx/Debug/3p6n645j/arm64-v8a/_deps/yaml-cpp-build/libyaml-cppd.a",
+      "runtimeFiles": []
+    },
+    "yaml-cpp-read::@fc0e65436a078e37eaec": {
+      "artifactName": "yaml-cpp-read",
+      "abi": "arm64-v8a",
+      "output": "/home/vista/class/class_project/AI_Navigation_Assistant/mobile/android/build/intermediates/cxx/Debug/3p6n645j/obj/arm64-v8a/read",
+      "runtimeFiles": []
+    },
+    "NightlyStart::@c1fb6b535d5396bcd0b2": {
+      "artifactName": "NightlyStart",
+      "abi": "arm64-v8a",
+      "runtimeFiles": []
+    },
+    "NightlyBuild::@c1fb6b535d5396bcd0b2": {
+      "artifactName": "NightlyBuild",
+      "abi": "arm64-v8a",
+      "runtimeFiles": []
+    },
+    "ExperimentalSubmit::@c1fb6b535d5396bcd0b2": {
+      "artifactName": "ExperimentalSubmit",
+      "abi": "arm64-v8a",
+      "runtimeFiles": []
+    },
+    "Nightly::@c1fb6b535d5396bcd0b2": {
+      "artifactName": "Nightly",
+      "abi": "arm64-v8a",
+      "runtimeFiles": []
+    },
+    "NightlyCoverage::@c1fb6b535d5396bcd0b2": {
+      "artifactName": "NightlyCoverage",
+      "abi": "arm64-v8a",
+      "runtimeFiles": []
+    },
+    "ContinuousConfigure::@c1fb6b535d5396bcd0b2": {
+      "artifactName": "ContinuousConfigure",
+      "abi": "arm64-v8a",
+      "runtimeFiles": []
+    },
+    "NightlyConfigure::@c1fb6b535d5396bcd0b2": {
+      "artifactName": "NightlyConfigure",
+      "abi": "arm64-v8a",
+      "runtimeFiles": []
+    },
+    "ContinuousCoverage::@c1fb6b535d5396bcd0b2": {
+      "artifactName": "ContinuousCoverage",
+      "abi": "arm64-v8a",
+      "runtimeFiles": []
+    },
+    "ContinuousSubmit::@c1fb6b535d5396bcd0b2": {
+      "artifactName": "ContinuousSubmit",
+      "abi": "arm64-v8a",
+      "runtimeFiles": []
+    },
+    "ExperimentalConfigure::@c1fb6b535d5396bcd0b2": {
+      "artifactName": "ExperimentalConfigure",
+      "abi": "arm64-v8a",
+      "runtimeFiles": []
+    },
+    "yaml-cpp-parse::@fc0e65436a078e37eaec": {
+      "artifactName": "yaml-cpp-parse",
+      "abi": "arm64-v8a",
+      "output": "/home/vista/class/class_project/AI_Navigation_Assistant/mobile/android/build/intermediates/cxx/Debug/3p6n645j/obj/arm64-v8a/parse",
+      "runtimeFiles": []
+    },
+    "ContinuousTest::@c1fb6b535d5396bcd0b2": {
+      "artifactName": "ContinuousTest",
+      "abi": "arm64-v8a",
+      "runtimeFiles": []
+    },
+    "Experimental::@c1fb6b535d5396bcd0b2": {
+      "artifactName": "Experimental",
+      "abi": "arm64-v8a",
+      "runtimeFiles": []
+    },
+    "ExperimentalBuild::@c1fb6b535d5396bcd0b2": {
+      "artifactName": "ExperimentalBuild",
+      "abi": "arm64-v8a",
+      "runtimeFiles": []
+    },
+    "ExperimentalUpdate::@c1fb6b535d5396bcd0b2": {
+      "artifactName": "ExperimentalUpdate",
+      "abi": "arm64-v8a",
+      "runtimeFiles": []
+    },
+    "ExperimentalMemCheck::@c1fb6b535d5396bcd0b2": {
+      "artifactName": "ExperimentalMemCheck",
+      "abi": "arm64-v8a",
+      "runtimeFiles": []
+    },
+    "ContinuousBuild::@c1fb6b535d5396bcd0b2": {
+      "artifactName": "ContinuousBuild",
+      "abi": "arm64-v8a",
+      "runtimeFiles": []
+    },
+    "Continuous::@c1fb6b535d5396bcd0b2": {
+      "artifactName": "Continuous",
+      "abi": "arm64-v8a",
+      "runtimeFiles": []
+    },
+    "NightlyMemoryCheck::@c1fb6b535d5396bcd0b2": {
+      "artifactName": "NightlyMemoryCheck",
+      "abi": "arm64-v8a",
+      "runtimeFiles": []
+    },
+    "ContinuousMemCheck::@c1fb6b535d5396bcd0b2": {
+      "artifactName": "ContinuousMemCheck",
+      "abi": "arm64-v8a",
+      "runtimeFiles": []
+    },
+    "NightlyMemCheck::@c1fb6b535d5396bcd0b2": {
+      "artifactName": "NightlyMemCheck",
+      "abi": "arm64-v8a",
+      "runtimeFiles": []
+    },
+    "yaml-cpp-sandbox::@fc0e65436a078e37eaec": {
+      "artifactName": "yaml-cpp-sandbox",
+      "abi": "arm64-v8a",
+      "output": "/home/vista/class/class_project/AI_Navigation_Assistant/mobile/android/build/intermediates/cxx/Debug/3p6n645j/obj/arm64-v8a/sandbox",
+      "runtimeFiles": []
+    }
+  }
+}
