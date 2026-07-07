@@ -1,0 +1,8 @@
+/home/vista/class/class_project/AI_Navigation_Assistant/mobile/CMakeLists.txt
+/home/vista/class/class_project/AI_Navigation_Assistant/mobile/android/.cxx/Debug/3p6n645j/arm64-v8a/_deps/yaml-cpp-src/CMakeLists.txt
+/home/vista/class/class_project/AI_Navigation_Assistant/mobile/android/.cxx/Debug/3p6n645j/arm64-v8a/_deps/yaml-cpp-src/util/CMakeLists.txt
+/home/vista/class/class_project/AI_Navigation_Assistant/mobile/third_party/android/OpenCV-android-sdk/sdk/native/jni/OpenCVConfig-version.cmake
+/home/vista/class/class_project/AI_Navigation_Assistant/mobile/third_party/android/OpenCV-android-sdk/sdk/native/jni/OpenCVConfig.cmake
+/home/vista/class/class_project/AI_Navigation_Assistant/mobile/third_party/android/OpenCV-android-sdk/sdk/native/jni/abi-arm64-v8a/OpenCVConfig.cmake
+/home/vista/class/class_project/AI_Navigation_Assistant/mobile/third_party/android/OpenCV-android-sdk/sdk/native/jni/abi-arm64-v8a/OpenCVModules-release.cmake
+/home/vista/class/class_project/AI_Navigation_Assistant/mobile/third_party/android/OpenCV-android-sdk/sdk/native/jni/abi-arm64-v8a/OpenCVModules.cmake
