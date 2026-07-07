@@ -1,0 +1,14 @@
+# Target labels
+ yaml-cpp-populate
+# Source files and their labels
+/home/vista/class/class_project/AI_Navigation_Assistant/mobile/android/.cxx/Debug/3p6n645j/arm64-v8a/_deps/yaml-cpp-subbuild/CMakeFiles/yaml-cpp-populate
+/home/vista/class/class_project/AI_Navigation_Assistant/mobile/android/.cxx/Debug/3p6n645j/arm64-v8a/_deps/yaml-cpp-subbuild/CMakeFiles/yaml-cpp-populate.rule
+/home/vista/class/class_project/AI_Navigation_Assistant/mobile/android/.cxx/Debug/3p6n645j/arm64-v8a/_deps/yaml-cpp-subbuild/CMakeFiles/yaml-cpp-populate-complete.rule
+/home/vista/class/class_project/AI_Navigation_Assistant/mobile/android/.cxx/Debug/3p6n645j/arm64-v8a/_deps/yaml-cpp-subbuild/yaml-cpp-populate-prefix/src/yaml-cpp-populate-stamp/yaml-cpp-populate-build.rule
+/home/vista/class/class_project/AI_Navigation_Assistant/mobile/android/.cxx/Debug/3p6n645j/arm64-v8a/_deps/yaml-cpp-subbuild/yaml-cpp-populate-prefix/src/yaml-cpp-populate-stamp/yaml-cpp-populate-configure.rule
+/home/vista/class/class_project/AI_Navigation_Assistant/mobile/android/.cxx/Debug/3p6n645j/arm64-v8a/_deps/yaml-cpp-subbuild/yaml-cpp-populate-prefix/src/yaml-cpp-populate-stamp/yaml-cpp-populate-download.rule
+/home/vista/class/class_project/AI_Navigation_Assistant/mobile/android/.cxx/Debug/3p6n645j/arm64-v8a/_deps/yaml-cpp-subbuild/yaml-cpp-populate-prefix/src/yaml-cpp-populate-stamp/yaml-cpp-populate-install.rule
+/home/vista/class/class_project/AI_Navigation_Assistant/mobile/android/.cxx/Debug/3p6n645j/arm64-v8a/_deps/yaml-cpp-subbuild/yaml-cpp-populate-prefix/src/yaml-cpp-populate-stamp/yaml-cpp-populate-mkdir.rule
+/home/vista/class/class_project/AI_Navigation_Assistant/mobile/android/.cxx/Debug/3p6n645j/arm64-v8a/_deps/yaml-cpp-subbuild/yaml-cpp-populate-prefix/src/yaml-cpp-populate-stamp/yaml-cpp-populate-patch.rule
+/home/vista/class/class_project/AI_Navigation_Assistant/mobile/android/.cxx/Debug/3p6n645j/arm64-v8a/_deps/yaml-cpp-subbuild/yaml-cpp-populate-prefix/src/yaml-cpp-populate-stamp/yaml-cpp-populate-test.rule
+/home/vista/class/class_project/AI_Navigation_Assistant/mobile/android/.cxx/Debug/3p6n645j/arm64-v8a/_deps/yaml-cpp-subbuild/yaml-cpp-populate-prefix/src/yaml-cpp-populate-stamp/yaml-cpp-populate-update.rule
