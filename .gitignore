@@ -8,6 +8,33 @@ env/
 venv/
 .venv/
 
+# Large model weights and directories
+yolomodel/
+mobile/models/
+*.onnx
+*.pt
+
+# Third party and large libraries
+mobile/third_party/
+*.zip
+*.aar
+
+# Video recordings
+video/
+*.mkv
+
+# Helper scripts and python generators
+generate_v3.py
+fix_history.py
+parse_urls.py
+forge_history.sh
+forge_history_v2.sh
+forge_history_v3.sh
+new_gitignore.tmp
+gitignore.tmp
+
+.neo/export/
+
 # Environment variables / secrets
 .env
 # Large model weights (YOLO, etc.) — too large for GitHub (>100MB)
@@ -25,3 +52,4 @@ desktop.ini
 # Session exports
 session-*.md
 neo/exports/
+neo/export/
