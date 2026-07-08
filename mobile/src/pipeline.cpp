@@ -142,7 +142,7 @@ int Pipeline::run() {
 }
 
 #ifdef __ANDROID__
-void Pipeline::push_frame(const uint8_t* data, int width, int height) {
+void Pipeline::push_frame(const uint8_t* data, int width, int height, int rotation) {
     if (!running_.load()) return;
 
     // NNAPI is not re-entrant: concurrent inference during camera switch
@@ -156,6 +156,17 @@ void Pipeline::push_frame(const uint8_t* data, int width, int height) {
     cv::Mat nv21(height + height / 2, width, CV_8UC1, const_cast<uint8_t*>(data));
     cv::Mat bgr;
     cv::cvtColor(nv21, bgr, cv::COLOR_YUV2BGR_NV21);
+
+    // CameraX delivers frames in sensor orientation (landscape). Rotate them 
+    // to match the physical screen (portrait) BEFORE feeding them to YOLO.
+    // This ensures YOLO's bounding boxes are upright, allowing direct mapping in UI.
+    if (rotation != 0) {
+        switch (rotation) {
+            case 90:  cv::rotate(bgr, bgr, cv::ROTATE_90_CLOCKWISE); break;
+            case 270: cv::rotate(bgr, bgr, cv::ROTATE_90_COUNTERCLOCKWISE); break;
+            case 180: cv::rotate(bgr, bgr, cv::ROTATE_180); break;
+        }
+    }
 
     // Center-crop to square BEFORE resize to preserve 1:1 aspect ratio for YOLO
     bgr = center_crop_square(bgr);
