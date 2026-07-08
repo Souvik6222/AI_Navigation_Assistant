@@ -18,6 +18,7 @@ import androidx.annotation.NonNull;
 import androidx.appcompat.app.AlertDialog;
 import androidx.appcompat.app.AppCompatActivity;
 import androidx.appcompat.app.AppCompatDelegate;
+import androidx.camera.core.AspectRatio;
 import androidx.camera.core.Camera;
 import androidx.camera.core.CameraSelector;
 import androidx.camera.core.ImageAnalysis;
@@ -261,12 +262,14 @@ public class MainActivity extends AppCompatActivity implements TextToSpeech.OnIn
                 : CameraSelector.DEFAULT_BACK_CAMERA;
 
         // Preview use case — renders live camera frames into PreviewView
-        Preview preview = new Preview.Builder().build();
+        Preview preview = new Preview.Builder()
+                .setTargetAspectRatio(AspectRatio.RATIO_16_9)
+                .build();
         preview.setSurfaceProvider(cameraPreview.getSurfaceProvider());
 
         // ImageAnalysis — delivers raw YUV frames to C++ pipeline for AI processing
         ImageAnalysis imageAnalysis = new ImageAnalysis.Builder()
-                .setTargetResolution(new Size(320, 240)) // Resolution the AI operates at
+                .setTargetAspectRatio(AspectRatio.RATIO_16_9)
                 .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
                 .setOutputImageFormat(ImageAnalysis.OUTPUT_IMAGE_FORMAT_YUV_420_888)
                 .build();
@@ -275,7 +278,7 @@ public class MainActivity extends AppCompatActivity implements TextToSpeech.OnIn
             if (nativePipeline != null && !isSwitchingCamera) {
                 byte[] nv21 = yuv420ToNv21(image);
                 // Pipeline processes at the image's dimensions, e.g. 320x240
-                nativePipeline.processFrame(nv21, image.getWidth(), image.getHeight());
+                nativePipeline.processFrame(nv21, image.getWidth(), image.getHeight(), image.getImageInfo().getRotationDegrees());
             }
             image.close();
         });
@@ -423,7 +426,7 @@ public class MainActivity extends AppCompatActivity implements TextToSpeech.OnIn
                           SpeakCallback speakCb,
                           SpeakCallback urgentCb);
 
-        native void processFrame(byte[] data, int width, int height);
+        native void processFrame(byte[] data, int width, int height, int rotation);
 
         native void stop();
         native void toggleLanguage();
@@ -431,8 +434,9 @@ public class MainActivity extends AppCompatActivity implements TextToSpeech.OnIn
         // Called by C++ JNI when visual frame is processed
         public void onDetections(float[] boxes) {
             Log.d(TAG, "onDetections received " + (boxes.length / 6) + " boxes");
-            // Note: 320x240 is the hardcoded AI pipeline resolution we requested from CameraX
-            activity.runOnUiThread(() -> activity.overlayView.setBoundingBoxes(boxes, 320, 240));
+            // Bounding box coordinates are in the cropped 640x640 square that YOLO processed.
+            // Pass 640x640 so OverlayView maps them correctly onto the square region of the preview.
+            activity.runOnUiThread(() -> activity.overlayView.setBoundingBoxes(boxes, 640, 640));
         }
 
         // Called by C++ JNI for dev logging (like FPS)

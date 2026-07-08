@@ -39,7 +39,7 @@ public:
 #ifdef __ANDROID__
     // Android-only: called from JNI with each raw NV21 camera frame.
     // CameraX drives this; the Pipeline does NOT own a camera on Android.
-    void push_frame(const uint8_t* data, int width, int height);
+    void push_frame(const uint8_t* data, int width, int height, int rotation = 0);
 #endif
 
 private:
