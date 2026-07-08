@@ -166,6 +166,25 @@ Java_com_navigation_assistant_MainActivity_00024NativePipeline_start(
     cfg.yolo_model_path  = base_path + "/yolov8n.onnx";
     cfg.midas_model_path = base_path + "/midas_v21_small_256.onnx";
 
+    // Force 640x640 so the square crop doesn't get distorted into a rectangle
+    // before it reaches YOLO's 640x640 input.
+    cfg.frame_width  = 640;
+    cfg.frame_height = 640;
+
+    // Only detect classes relevant to indoor navigation.
+    // Keeps horse, airplane, cow, etc. from generating false alerts.
+    cfg.whitelist = {
+        "person", "bicycle", "car", "motorcycle", "bus", "truck",
+        "chair", "couch", "bed", "dining table", "toilet", "tv", "laptop",
+        "cell phone", "bottle", "cup", "backpack", "handbag", "suitcase",
+        "umbrella", "book", "potted plant", "dog", "cat",
+        "stop sign", "fire hydrant", "bench"
+    };
+
+    // Slightly higher confidence to reduce false positives on ambiguous shapes
+    cfg.confidence_threshold  = 0.50f;
+    cfg.nms_iou_threshold     = 0.40f;
+
     LOGI("Starting pipeline with models at: %s", base_path.c_str());
 
     g_pipeline = std::make_unique<Pipeline>(cfg);
@@ -204,7 +223,8 @@ Java_com_navigation_assistant_MainActivity_00024NativePipeline_processFrame(
     JNIEnv* env, jobject /*thiz*/,
     jbyteArray data,
     jint width,
-    jint height)
+    jint height,
+    jint rotation)
 {
     if (!g_pipeline || !g_running.load()) return;
 
@@ -212,7 +232,7 @@ Java_com_navigation_assistant_MainActivity_00024NativePipeline_processFrame(
     jbyte* bytes = env->GetByteArrayElements(data, nullptr);
     if (!bytes) return;
 
-    g_pipeline->push_frame(reinterpret_cast<const uint8_t*>(bytes), width, height);
+    g_pipeline->push_frame(reinterpret_cast<const uint8_t*>(bytes), width, height, rotation);
 
     env->ReleaseByteArrayElements(data, bytes, JNI_ABORT);
 }

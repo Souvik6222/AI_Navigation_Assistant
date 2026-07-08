@@ -343,3 +343,25 @@ opts.SetIntraOpNumThreads(config.num_threads); // Optimal: 4
 ### B. The Interactive Prompt String Bug
 **The Trap:** When prompted for an IP camera, typing `"http://192.168.x.x:8080/video"` (with quotes) crashed OpenCV.
 **The Cause:** `std::getline` absorbs the exact literal string. The quotes were treated as part of the URL, which GStreamer couldn't parse. We refactored `cam_index` (int) to `cam_source` (std::string) to seamlessly support both integer webcams (`0`) and raw URL strings (`http://...` without quotes).
+
+## 6. Android UI & Coordinate Mapping Nightmares (v0.0.2-alpha)
+
+### A. The 9:16 vs 1:1 Coordinate Mapping Trap
+**The Trap:** Bounding boxes drawn on Android were completely mismatched, often floating in the air. 
+**The Cause:** The AI pipeline center-crops the camera feed to a 1:1 square. However, Android's `PreviewView` natively displays a 9:16 full-screen feed using `FILL_CENTER`. We tried complex math in `OverlayView` to project 640x640 coordinates onto the 9:16 screen, but it fought Android's internal scaling.
+**The Solution:** We replaced `FrameLayout` with `ConstraintLayout`, forcing the `PreviewView` to a 1:1 square at the top of the screen (`app:layout_constraintDimensionRatio="H,1:1"`). We anchored `OverlayView` to the exact same square, reducing the coordinate math to a simple linear scale.
+
+### B. The "Sideways Frame" Sensor Rotation Bug
+**The Trap:** Even after fixing the layout, bounding boxes were still completely wrong. The AI returned coordinates where X and Y appeared swapped.
+**The Cause:** Physical smartphone camera sensors are mounted in landscape (1920x1080). When holding the phone in portrait, the hardware still returns a landscape frame, just tagged with a 90-degree rotation. The C++ pipeline was center-cropping this landscape frame directly, effectively feeding YOLO a sideways image!
+**The Solution:** Extracted `image.getImageInfo().getRotationDegrees()` from CameraX, passed it through JNI, and used OpenCV (`cv::rotate`) to physically rotate the matrix before cropping. YOLO now processes a perfectly upright image.
+
+### C. The 320x240 "Squash" Distortion
+**The Trap:** Bounding boxes were tiny and vertically squished compared to the PC runtime, despite being on the same model.
+**The Cause:** While the C++ pipeline correctly cropped a 720x720 square, it fell back to the default `types.hpp` configuration of `frame_width=320`, `frame_height=240`. The 720x720 square was squashed into a 320x240 rectangle. YOLO then stretched this rectangle back into a 640x640 square for inference, heavily distorting real-world shapes.
+**The Solution:** Explicitly hardcoded `cfg.frame_width = 640` and `cfg.frame_height = 640` inside the Android JNI setup (`jni_bridge.cpp`) so the 1:1 crop scales cleanly to 640x640 without distortion.
+
+### D. The Outdoor "Horse" False Positive
+**The Trap:** The mobile app randomly detected "horses" inside the office.
+**The Cause:** The Android JNI setup completely bypassed the YAML config parser, passing an empty `whitelist` to the detector. This enabled all 80 COCO classes, allowing office chairs to be misidentified as animals.
+**The Solution:** Injected a hardcoded indoor navigation whitelist (person, laptop, chair, etc.) directly into `jni_bridge.cpp`.
