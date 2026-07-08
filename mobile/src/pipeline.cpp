@@ -109,6 +109,10 @@ int Pipeline::run() {
         }
 
         frame = resize_frame(frame, config_.frame_width, config_.frame_height);
+
+        // Center-crop to square for 1:1 aspect ratio (matches YOLO's 640x640 input)
+        frame = center_crop_square(frame);
+
         frame_index++;
 
         process_frame(frame, frame_index);
@@ -152,6 +156,9 @@ void Pipeline::push_frame(const uint8_t* data, int width, int height) {
     cv::Mat nv21(height + height / 2, width, CV_8UC1, const_cast<uint8_t*>(data));
     cv::Mat bgr;
     cv::cvtColor(nv21, bgr, cv::COLOR_YUV2BGR_NV21);
+
+    // Center-crop to square BEFORE resize to preserve 1:1 aspect ratio for YOLO
+    bgr = center_crop_square(bgr);
 
     // Resize to configured processing resolution
     if (bgr.cols != config_.frame_width || bgr.rows != config_.frame_height) {

@@ -4,7 +4,7 @@
 
 # --- Performance ---
 performance:
-  process_every_n_frames: 3     # Only run AI pipeline every Nth frame (1 = every frame)
+  process_every_n_frames: 2     # Only run AI pipeline every Nth frame (1 = every frame)
   num_threads: 4                # Number of CPU threads to use for ONNX (4 is optimal, too high causes overhead)
 
 # --- Camera ---
@@ -18,8 +18,9 @@ camera:
 
 # --- Object Detection (YOLOv8) ---
 detection:
-  model_path: "/home/vista/class/class_project/AI_Navigation_Assistant/mobile/models/yolov8s.onnx" 
-  confidence_threshold: 0.80
+  model_path: "/home/vista/class/class_project/AI_Navigation_Assistant/mobile/models/yolov8n.onnx" 
+  confidence_threshold: 0.45
+  nms_iou_threshold: 0.40       # Tighter NMS = fewer overlapping boxes (default was 0.5)
   min_bbox_area_ratio: 0.01   # Minimum bounding box area as fraction of frame (1%)
   target_classes:             # COCO class names to detect (whitelist)
     - person

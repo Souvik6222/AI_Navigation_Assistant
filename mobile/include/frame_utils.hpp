@@ -5,6 +5,7 @@
 #include <string>
 
 cv::Mat resize_frame(const cv::Mat& frame, int width, int height);
+cv::Mat center_crop_square(const cv::Mat& frame);
 cv::Mat annotate_frame(const cv::Mat& frame, const std::vector<TrackedObject>& objects);
 cv::Mat draw_status_bar(const cv::Mat& frame, const std::string& language,
                         float fps, int num_objects);
