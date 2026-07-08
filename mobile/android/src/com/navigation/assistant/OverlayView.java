@@ -75,40 +75,33 @@ public class OverlayView extends View {
         // based on the aspect ratios. For simplicity, we assume FILL_CENTER scales to fit the largest dimension 
         // and crops the rest. 
         
-        int viewWidth = getWidth();
+        int viewWidth  = getWidth();
         int viewHeight = getHeight();
 
-        // Calculate scaling and translation to match PreviewView scaleType="fillCenter"
-        float scaleX = (float) viewWidth / previewWidth;
+        // Both the OverlayView and the AI inference frame are the same 1:1 square.
+        // Simple linear scale from 640x640 → view dimensions.
+        float scaleX = (float) viewWidth  / previewWidth;
         float scaleY = (float) viewHeight / previewHeight;
-        float scale = Math.max(scaleX, scaleY); // fillCenter uses max scale
-
-        float scaledWidth = previewWidth * scale;
-        float scaledHeight = previewHeight * scale;
-
-        float offsetX = (viewWidth - scaledWidth) / 2f;
-        float offsetY = (viewHeight - scaledHeight) / 2f;
 
         for (int i = 0; i < boxes.length; i += 6) {
             if (i + 5 >= boxes.length) break;
 
-            int classId = (int) boxes[i];
-            float x1 = boxes[i + 1];
-            float y1 = boxes[i + 2];
-            float x2 = boxes[i + 3];
-            float y2 = boxes[i + 4];
+            int classId  = (int) boxes[i];
+            float x1     = boxes[i + 1];
+            float y1     = boxes[i + 2];
+            float x2     = boxes[i + 3];
+            float y2     = boxes[i + 4];
             float distance = boxes[i + 5];
 
-            // Scale to screen
-            float left = x1 * scale + offsetX;
-            float top = y1 * scale + offsetY;
-            float right = x2 * scale + offsetX;
-            float bottom = y2 * scale + offsetY;
+            float left   = x1 * scaleX;
+            float top    = y1 * scaleY;
+            float right  = x2 * scaleX;
+            float bottom = y2 * scaleY;
 
-            // Clamp to screen bounds
-            left = Math.max(0, Math.min(left, viewWidth));
-            top = Math.max(0, Math.min(top, viewHeight));
-            right = Math.max(0, Math.min(right, viewWidth));
+            // Clamp to view bounds
+            left   = Math.max(0, Math.min(left,   viewWidth));
+            top    = Math.max(0, Math.min(top,    viewHeight));
+            right  = Math.max(0, Math.min(right,  viewWidth));
             bottom = Math.max(0, Math.min(bottom, viewHeight));
 
             RectF rect = new RectF(left, top, right, bottom);
