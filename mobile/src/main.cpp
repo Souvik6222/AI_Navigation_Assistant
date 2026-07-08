@@ -2,7 +2,15 @@
 #include <iostream>
 #include <cstring>
 #include <fstream>
+#include <algorithm>
 #include <yaml-cpp/yaml.h>
+
+static std::string trim(const std::string& s) {
+    auto start = s.find_first_not_of(" \t\r\n");
+    if (start == std::string::npos) return "";
+    auto end = s.find_last_not_of(" \t\r\n");
+    return s.substr(start, end - start + 1);
+}
 
 static Config load_config(const std::string& path) {
     Config cfg;
@@ -34,6 +42,8 @@ static Config load_config(const std::string& path) {
             cfg.yolo_model_path = root["detection"]["model_path"].as<std::string>();
         if (root["detection"]["confidence_threshold"])
             cfg.confidence_threshold = root["detection"]["confidence_threshold"].as<float>();
+        if (root["detection"]["nms_iou_threshold"])
+            cfg.nms_iou_threshold = root["detection"]["nms_iou_threshold"].as<float>();
 
         if (root["depth"]["model_path"])
             cfg.midas_model_path = root["depth"]["model_path"].as<std::string>();
@@ -111,16 +121,19 @@ int main(int argc, char** argv) {
         std::cout << "Enter Camera IP or 0 for internal webcam [" << config.cam_source << "]: ";
         std::string cam;
         std::getline(std::cin, cam);
+        cam = trim(cam);
         if (!cam.empty()) config.cam_source = cam;
 
         std::cout << "Enter YOLO model path [" << config.yolo_model_path << "]: ";
         std::string yolo;
         std::getline(std::cin, yolo);
+        yolo = trim(yolo);
         if (!yolo.empty()) config.yolo_model_path = yolo;
 
         std::cout << "Enter MiDaS model path [" << config.midas_model_path << "]: ";
         std::string midas;
         std::getline(std::cin, midas);
+        midas = trim(midas);
         if (!midas.empty()) config.midas_model_path = midas;
     }
 

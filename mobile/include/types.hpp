@@ -47,7 +47,8 @@ struct Config {
 
     // Detection
     std::string yolo_model_path = "models/yolov8n.onnx";
-    float confidence_threshold = 0.55f;
+    float confidence_threshold = 0.45f;
+    float nms_iou_threshold = 0.40f;
     float min_bbox_area_ratio = 0.01f;
     std::unordered_set<std::string> whitelist = {}; // Empty means allow all
 

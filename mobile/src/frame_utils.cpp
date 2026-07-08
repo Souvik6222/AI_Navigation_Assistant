@@ -10,6 +10,16 @@ cv::Mat resize_frame(const cv::Mat& frame, int width, int height) {
     return out;
 }
 
+cv::Mat center_crop_square(const cv::Mat& frame) {
+    int h = frame.rows, w = frame.cols;
+    if (h == w) return frame; // Already square
+
+    int side = std::min(h, w);
+    int x_off = (w - side) / 2;
+    int y_off = (h - side) / 2;
+    return frame(cv::Rect(x_off, y_off, side, side)).clone();
+}
+
 cv::Mat annotate_frame(const cv::Mat& frame, const std::vector<TrackedObject>& objects) {
     cv::Mat annotated = frame.clone();
     int h = annotated.rows, w = annotated.cols;

@@ -25,6 +25,7 @@ static const std::vector<std::string> COCO_NAMES = {
 ObjectDetector::ObjectDetector(const Config& config)
     : confidence_threshold_(config.confidence_threshold)
     , min_bbox_area_ratio_(config.min_bbox_area_ratio)
+    , iou_threshold_(config.nms_iou_threshold)
     , whitelist_(config.whitelist)
 {
     env_ = Ort::Env(OrtLoggingLevel::ORT_LOGGING_LEVEL_WARNING, "detector");
