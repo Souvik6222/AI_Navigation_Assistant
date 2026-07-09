@@ -39,6 +39,7 @@ class VoiceEngine:
         self._gtts_lang = voice_config.get("gtts_lang", "hi")
         self._queue_max_size = voice_config.get("queue_max_size", 10)
         self._temp_dir = voice_config.get("audio_temp_dir", "temp_audio")
+        self._voice_gender = voice_config.get("voice_gender", "female")
 
         # Create temp audio directory
         os.makedirs(self._temp_dir, exist_ok=True)
@@ -204,6 +205,17 @@ class VoiceEngine:
             engine = pyttsx3.init()
             engine.setProperty("rate", self._rate)
             engine.setProperty("volume", self._volume)
+
+            # Change voice gender/index
+            voices = engine.getProperty("voices")
+            if voices:
+                if self._voice_gender == "female" and len(voices) > 1:
+                    engine.setProperty("voice", voices[1].id)
+                elif self._voice_gender == "male" and len(voices) > 0:
+                    engine.setProperty("voice", voices[0].id)
+                elif isinstance(self._voice_gender, int) and self._voice_gender < len(voices):
+                    engine.setProperty("voice", voices[self._voice_gender].id)
+
             log.debug(f"Speaking (EN): {text}")
             engine.say(text)
             engine.runAndWait()

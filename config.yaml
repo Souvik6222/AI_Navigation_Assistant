@@ -91,6 +91,7 @@ voice:
   default_language: "en"         # "en" or "hi"
   pyttsx3_rate: 175              # Words per minute for English TTS
   pyttsx3_volume: 1.0            # 0.0 to 1.0
+  voice_gender: "female"         # Voice gender for English TTS: "female" (smoother, better for presentations) or "male"
   gtts_lang: "hi"                # gTTS language code for Hindi
   audio_temp_dir: "temp_audio"   # Temporary dir for gTTS mp3 files
   queue_max_size: 1             # Max queued messages (keep small to prevent stale/delayed voice warnings)
