@@ -35,8 +35,8 @@ android {
         applicationId 'com.navigation.assistant'
         minSdk 26
         targetSdk 34
-        versionCode 1
-        versionName '1.0'
+        versionCode 4
+        versionName '0.0.4-alpha'
 
         externalNativeBuild {
             cmake {
@@ -78,7 +78,7 @@ android {
 
     applicationVariants.all { variant ->
         variant.outputs.all {
-            outputFileName = "ai_navigation_assistant-v0.0.3-alpha.apk"
+            outputFileName = "ai_navigation_assistant-v0.0.4-alpha.apk"
         }
     }
 }

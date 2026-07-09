@@ -65,9 +65,12 @@ public class MainActivity extends AppCompatActivity implements TextToSpeech.OnIn
 
     // Logging State
     private boolean showingDevLogs = false;
-    private final LinkedList<String> normalLogs = new LinkedList<>();
-    private final LinkedList<String> devLogs = new LinkedList<>();
-    private static final int MAX_LOGS = 50;
+    private LinkedList<String> normalLogs = new LinkedList<>();
+    private LinkedList<String> devLogs = new LinkedList<>();
+    private static final int MAX_LOGS = 100;
+    // Used to suppress navigation TTS while LLM vision description is playing
+    private long lastVisionSpeakMs = 0;
+    private static final long VISION_LOCK_MS = 8000; // suppress TTS for 8s after LLM speaks
     private final SimpleDateFormat timeFormat = new SimpleDateFormat("HH:mm:ss", Locale.US);
 
     // CameraX
@@ -140,7 +143,9 @@ public class MainActivity extends AppCompatActivity implements TextToSpeech.OnIn
         btnSettings.setOnClickListener(v -> { resetHideTimer(); showSettingsDialog(); });
 
         resetHideTimer();
-        tts = new TextToSpeech(this, this);
+        tts = new TextToSpeech(this, this, "com.github.olga_yakovleva.rhvoice.android");
+        // Note: if RHVoice is not installed, this will silently fail and onInit gets ERROR.
+        // We handle that by falling back to system default TTS in onInit.
 
         if (ContextCompat.checkSelfPermission(this, Manifest.permission.CAMERA)
                 != PackageManager.PERMISSION_GRANTED) {
@@ -154,25 +159,53 @@ public class MainActivity extends AppCompatActivity implements TextToSpeech.OnIn
     @Override
     public void onInit(int status) {
         if (status == TextToSpeech.SUCCESS) {
-            tts.setLanguage(Locale.ENGLISH);
+            // Try setting English locale; if RHVoice doesn't support it, it won't crash
+            int langResult = tts.setLanguage(Locale.ENGLISH);
+            if (langResult == TextToSpeech.LANG_MISSING_DATA
+                    || langResult == TextToSpeech.LANG_NOT_SUPPORTED) {
+                // RHVoice English (Russia) — try with a broader locale
+                tts.setLanguage(new Locale("en"));
+            }
             tts.setSpeechRate(0.85f);
             ttsReady = true;
-            appendLog(normalLogs, "System: TTS engine initialized");
-            Log.d(TAG, "TTS initialized");
+            appendLog(normalLogs, "System: TTS ready (RHVoice)");
+            Log.d(TAG, "TTS initialized with RHVoice");
         } else {
-            appendLog(normalLogs, "System: TTS initialization failed!");
-            Log.e(TAG, "TTS initialization failed");
+            // RHVoice wasn't available — retry with system default TTS
+            Log.w(TAG, "RHVoice TTS init failed (status=" + status + "), falling back to system default");
+            tts = new TextToSpeech(this, status2 -> {
+                if (status2 == TextToSpeech.SUCCESS) {
+                    tts.setLanguage(Locale.ENGLISH);
+                    tts.setSpeechRate(0.85f);
+                    ttsReady = true;
+                    appendLog(normalLogs, "System: TTS ready (system default)");
+                } else {
+                    appendLog(normalLogs, "System: TTS FAILED — no TTS engine available!");
+                    Log.e(TAG, "System default TTS also failed");
+                }
+            });
         }
     }
 
     public void speak(String text) {
+        // Suppress regular nav alerts while LLM vision description is playing
+        if (System.currentTimeMillis() - lastVisionSpeakMs < VISION_LOCK_MS) return;
         if (ttsReady && tts != null) tts.speak(text, TextToSpeech.QUEUE_FLUSH, null, null);
         appendLog(normalLogs, "TTS: " + text);
     }
 
     public void speakUrgent(String text) {
+        // Urgent alerts always break through, even during vision description
+        lastVisionSpeakMs = 0;
         if (ttsReady && tts != null) tts.speak(text, TextToSpeech.QUEUE_FLUSH, null, null);
         appendLog(normalLogs, "TTS URGENT: " + text);
+    }
+
+    public void speakVision(String text) {
+        // LLM vision description — locks out regular nav TTS for VISION_LOCK_MS
+        lastVisionSpeakMs = System.currentTimeMillis();
+        if (ttsReady && tts != null) tts.speak(text, TextToSpeech.QUEUE_FLUSH, null, null);
+        appendLog(normalLogs, "Vision: " + text);
     }
 
     private void appendLog(LinkedList<String> logList, String message) {
@@ -424,7 +457,7 @@ public class MainActivity extends AppCompatActivity implements TextToSpeech.OnIn
         spinnerProvider.setSelection(savedProvider);
         editBaseUrl.setText(prefs.getString("base_url", ""));
         editApiKey.setText(prefs.getString("api_key", ""));
-        editModelName.setText(prefs.getString("model_name", "llama3-8b-8192"));
+        editModelName.setText(prefs.getString("model_name", "qwen/qwen3.6-27b"));
 
         spinnerProvider.setOnItemSelectedListener(new android.widget.AdapterView.OnItemSelectedListener() {
             @Override
@@ -462,12 +495,21 @@ public class MainActivity extends AppCompatActivity implements TextToSpeech.OnIn
                 int providerIndex = prefs.getInt("provider", 0);
                 String baseUrl = prefs.getString("base_url", "");
                 String apiKey = prefs.getString("api_key", "");
-                String modelName = prefs.getString("model_name", "llama3-8b-8192");
+                String modelName = prefs.getString("model_name", "qwen/qwen3.6-27b");
+                String[] providerNames = {"Groq", "OpenAI", "Custom"};
+
+                // Warn early if API key is missing for cloud providers
+                if (apiKey.isEmpty() && providerIndex < 2) {
+                    appendLog(devLogs, "[LLM] SKIP: No API key set for " + providerNames[providerIndex]);
+                    return;
+                }
 
                 String apiUrl;
                 if (providerIndex == 0) apiUrl = "https://api.groq.com/openai/v1/chat/completions";
                 else if (providerIndex == 1) apiUrl = "https://api.openai.com/v1/chat/completions";
                 else apiUrl = baseUrl.endsWith("/chat/completions") ? baseUrl : (baseUrl.endsWith("/") ? baseUrl + "chat/completions" : baseUrl + "/chat/completions");
+
+                appendLog(devLogs, "[LLM] Sending to " + providerNames[Math.min(providerIndex, 2)] + " / " + modelName);
 
                 org.json.JSONObject payload = new org.json.JSONObject();
                 payload.put("model", modelName);
@@ -479,7 +521,13 @@ public class MainActivity extends AppCompatActivity implements TextToSpeech.OnIn
                 org.json.JSONArray content = new org.json.JSONArray();
                 org.json.JSONObject textContent = new org.json.JSONObject();
                 textContent.put("type", "text");
-                textContent.put("text", "Describe this scene briefly for a visually impaired user.");
+                
+                String lang = getSharedPreferences("app_prefs", MODE_PRIVATE).getString("language", "en");
+                String prompt = "Describe this scene very briefly in 1 short sentence for a blind person. Just list the most important objects and their general location. No extra details.";
+                if ("hi".equals(lang)) {
+                    prompt = "Describe this scene very briefly in 1 short sentence in Hindi for a blind person. Just list the most important objects. No extra details.";
+                }
+                textContent.put("text", prompt);
                 content.put(textContent);
                 
                 org.json.JSONObject imageContent = new org.json.JSONObject();
@@ -493,10 +541,17 @@ public class MainActivity extends AppCompatActivity implements TextToSpeech.OnIn
                 messages.put(message);
                 payload.put("messages", messages);
                 payload.put("max_tokens", 80);
+                
+                // Disable thinking/reasoning for Groq models (like Qwen) to bypass latency
+                if (providerIndex == 0) {
+                    payload.put("reasoning_effort", "none");
+                }
 
                 java.net.URL url = new java.net.URL(apiUrl);
                 java.net.HttpURLConnection conn = (java.net.HttpURLConnection) url.openConnection();
                 conn.setRequestMethod("POST");
+                conn.setConnectTimeout(10000);
+                conn.setReadTimeout(15000);
                 conn.setRequestProperty("Content-Type", "application/json");
                 if (!apiKey.isEmpty()) {
                     conn.setRequestProperty("Authorization", "Bearer " + apiKey);
@@ -519,10 +574,32 @@ public class MainActivity extends AppCompatActivity implements TextToSpeech.OnIn
                     org.json.JSONObject responseJson = new org.json.JSONObject(sb.toString());
                     String description = responseJson.getJSONArray("choices").getJSONObject(0).getJSONObject("message").getString("content");
                     
-                    runOnUiThread(() -> speak(description));
+                    // Strip Qwen/DeepSeek thinking blocks: <think>...</think>
+                    description = description.replaceAll("(?s)<think>.*?</think>\\s*", "");
+                    
+                    final String finalDesc = description;
+                    appendLog(devLogs, "[LLM] OK: " + finalDesc.substring(0, Math.min(60, finalDesc.length())) + "...");
+                    runOnUiThread(() -> speakVision(finalDesc));
                 } else {
-                    Log.e(TAG, "LLM API Error: " + responseCode);
-                    appendLog(devLogs, "LLM API Error: " + responseCode);
+                    // Read error body for a useful message (401 = bad key, 429 = rate limit, etc.)
+                    java.io.InputStream errStream = conn.getErrorStream();
+                    String errBody = "";
+                    if (errStream != null) {
+                        java.io.BufferedReader errReader = new java.io.BufferedReader(new java.io.InputStreamReader(errStream));
+                        StringBuilder errSb = new StringBuilder();
+                        String errLine;
+                        while ((errLine = errReader.readLine()) != null) errSb.append(errLine);
+                        errBody = errSb.toString();
+                        try {
+                            org.json.JSONObject errJson = new org.json.JSONObject(errBody);
+                            if (errJson.has("error")) errBody = errJson.getJSONObject("error").optString("message", errBody);
+                        } catch (Exception ignored) {}
+                    }
+                    String hint = responseCode == 401 ? " (Invalid API key)" :
+                                  responseCode == 429 ? " (Rate limit)" :
+                                  responseCode == 400 ? " (Bad request)" : "";
+                    appendLog(devLogs, "[LLM] Error " + responseCode + hint + ": " + errBody.substring(0, Math.min(80, errBody.length())));
+                    Log.e(TAG, "LLM API Error " + responseCode + ": " + errBody);
                 }
                 conn.disconnect();
             } catch (Exception e) {
