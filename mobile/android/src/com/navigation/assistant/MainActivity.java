@@ -56,7 +56,8 @@ public class MainActivity extends AppCompatActivity implements TextToSpeech.OnIn
     private PreviewView cameraPreview;
     private OverlayView overlayView;
     private View floatingBar;
-    private Button btnVision, btnLogsToggle, btnSettings;
+    private Button btnVision, btnTorch, btnLogsToggle, btnSettings;
+    private boolean isTorchOn = false;
     private TextView logTextView;
     private ScrollView logScrollView;
     private boolean ttsReady = false;
@@ -93,8 +94,22 @@ public class MainActivity extends AppCompatActivity implements TextToSpeech.OnIn
         overlayView   = findViewById(R.id.overlay_view);
         floatingBar   = findViewById(R.id.floating_ui_container);
         btnVision     = findViewById(R.id.btn_vision);
+        btnTorch      = findViewById(R.id.btn_torch);
         btnLogsToggle = findViewById(R.id.btn_logs_toggle);
         btnSettings   = findViewById(R.id.btn_settings);
+
+        // Torch button: toggle flashlight
+        btnTorch.setOnClickListener(v -> {
+            resetHideTimer();
+            if (activeCamera != null && activeCamera.getCameraInfo().hasFlashUnit()) {
+                isTorchOn = !isTorchOn;
+                activeCamera.getCameraControl().enableTorch(isTorchOn);
+                btnTorch.setText(isTorchOn ? "Torch ON" : "Torch");
+                Toast.makeText(this, isTorchOn ? "Torch Enabled" : "Torch Disabled", Toast.LENGTH_SHORT).show();
+            } else {
+                Toast.makeText(this, "Torch not available", Toast.LENGTH_SHORT).show();
+            }
+        });
         logTextView   = findViewById(R.id.log_text_view);
         logScrollView = findViewById(R.id.log_scroll_view);
 
@@ -191,7 +206,7 @@ public class MainActivity extends AppCompatActivity implements TextToSpeech.OnIn
         appendLog(normalLogs, "System: Extracting AI Models...");
         new Thread(() -> {
             try {
-                String[] models = {"yolov8n.onnx", "midas_v21_small_256.onnx"};
+                String[] models = {"yolov8n_int8.onnx", "midas_v21_small_256.onnx"};
                 for (String model : models) {
                     File outFile = new File(getFilesDir(), model);
                     if (!outFile.exists()) {
@@ -285,6 +300,9 @@ public class MainActivity extends AppCompatActivity implements TextToSpeech.OnIn
 
         try {
             activeCamera = cameraProvider.bindToLifecycle(this, selector, preview, imageAnalysis);
+            if (activeCamera.getCameraInfo().hasFlashUnit()) {
+                activeCamera.getCameraControl().enableTorch(isTorchOn);
+            }
             appendLog(normalLogs, "System: Camera connected (" + (useFrontCamera ? "front" : "back") + ")");
             Log.d(TAG, "CameraX bound (" + (useFrontCamera ? "front" : "back") + ")");
         } catch (Exception e) {
@@ -360,7 +378,7 @@ public class MainActivity extends AppCompatActivity implements TextToSpeech.OnIn
     }
 
     private void showSettingsDialog() {
-        String[] options = {"Toggle Language (EN/HI)", "Toggle Dark Mode", "Open Source Licenses"};
+        String[] options = {"Toggle Language (EN/HI)", "Toggle Dark Mode", "LLM API Settings", "Open Source Licenses"};
         new AlertDialog.Builder(this)
             .setTitle("Settings")
             .setItems(options, (dialog, which) -> {
@@ -379,12 +397,139 @@ public class MainActivity extends AppCompatActivity implements TextToSpeech.OnIn
                         cur == AppCompatDelegate.MODE_NIGHT_YES
                             ? AppCompatDelegate.MODE_NIGHT_NO
                             : AppCompatDelegate.MODE_NIGHT_YES);
+                } else if (which == 2) {
+                    showApiSettingsDialog();
                 } else {
                     Toast.makeText(this,
                         "YOLOv8 (AGPL-3.0)  MiDaS (MIT)  ONNX Runtime (MIT)",
                         Toast.LENGTH_LONG).show();
                 }
             }).show();
+    }
+
+    private void showApiSettingsDialog() {
+        View view = getLayoutInflater().inflate(R.layout.dialog_api_settings, null);
+        android.widget.Spinner spinnerProvider = view.findViewById(R.id.spinner_provider);
+        View containerBaseUrl = view.findViewById(R.id.container_base_url);
+        android.widget.EditText editBaseUrl = view.findViewById(R.id.edit_base_url);
+        android.widget.EditText editApiKey = view.findViewById(R.id.edit_api_key);
+        android.widget.EditText editModelName = view.findViewById(R.id.edit_model_name);
+
+        String[] providers = {"Groq", "OpenAI", "Custom / Ollama"};
+        android.widget.ArrayAdapter<String> adapter = new android.widget.ArrayAdapter<>(this, android.R.layout.simple_spinner_dropdown_item, providers);
+        spinnerProvider.setAdapter(adapter);
+
+        android.content.SharedPreferences prefs = getSharedPreferences("llm_prefs", MODE_PRIVATE);
+        int savedProvider = prefs.getInt("provider", 0);
+        spinnerProvider.setSelection(savedProvider);
+        editBaseUrl.setText(prefs.getString("base_url", ""));
+        editApiKey.setText(prefs.getString("api_key", ""));
+        editModelName.setText(prefs.getString("model_name", "llama3-8b-8192"));
+
+        spinnerProvider.setOnItemSelectedListener(new android.widget.AdapterView.OnItemSelectedListener() {
+            @Override
+            public void onItemSelected(android.widget.AdapterView<?> parent, View view, int position, long id) {
+                if (position == 2) {
+                    containerBaseUrl.setVisibility(View.VISIBLE);
+                } else {
+                    containerBaseUrl.setVisibility(View.GONE);
+                }
+            }
+            @Override
+            public void onNothingSelected(android.widget.AdapterView<?> parent) {}
+        });
+
+        new AlertDialog.Builder(this)
+            .setTitle("LLM API Settings")
+            .setView(view)
+            .setPositiveButton("Save", (dialog, which) -> {
+                prefs.edit()
+                     .putInt("provider", spinnerProvider.getSelectedItemPosition())
+                     .putString("base_url", editBaseUrl.getText().toString())
+                     .putString("api_key", editApiKey.getText().toString())
+                     .putString("model_name", editModelName.getText().toString())
+                     .apply();
+                Toast.makeText(this, "API Settings Saved", Toast.LENGTH_SHORT).show();
+            })
+            .setNegativeButton("Cancel", null)
+            .show();
+    }
+
+    public void requestSceneDescription(String base64Image) {
+        new Thread(() -> {
+            try {
+                android.content.SharedPreferences prefs = getSharedPreferences("llm_prefs", MODE_PRIVATE);
+                int providerIndex = prefs.getInt("provider", 0);
+                String baseUrl = prefs.getString("base_url", "");
+                String apiKey = prefs.getString("api_key", "");
+                String modelName = prefs.getString("model_name", "llama3-8b-8192");
+
+                String apiUrl;
+                if (providerIndex == 0) apiUrl = "https://api.groq.com/openai/v1/chat/completions";
+                else if (providerIndex == 1) apiUrl = "https://api.openai.com/v1/chat/completions";
+                else apiUrl = baseUrl.endsWith("/chat/completions") ? baseUrl : (baseUrl.endsWith("/") ? baseUrl + "chat/completions" : baseUrl + "/chat/completions");
+
+                org.json.JSONObject payload = new org.json.JSONObject();
+                payload.put("model", modelName);
+                
+                org.json.JSONArray messages = new org.json.JSONArray();
+                org.json.JSONObject message = new org.json.JSONObject();
+                message.put("role", "user");
+                
+                org.json.JSONArray content = new org.json.JSONArray();
+                org.json.JSONObject textContent = new org.json.JSONObject();
+                textContent.put("type", "text");
+                textContent.put("text", "Describe this scene briefly for a visually impaired user.");
+                content.put(textContent);
+                
+                org.json.JSONObject imageContent = new org.json.JSONObject();
+                imageContent.put("type", "image_url");
+                org.json.JSONObject imageUrl = new org.json.JSONObject();
+                imageUrl.put("url", "data:image/jpeg;base64," + base64Image);
+                imageContent.put("image_url", imageUrl);
+                content.put(imageContent);
+                
+                message.put("content", content);
+                messages.put(message);
+                payload.put("messages", messages);
+                payload.put("max_tokens", 80);
+
+                java.net.URL url = new java.net.URL(apiUrl);
+                java.net.HttpURLConnection conn = (java.net.HttpURLConnection) url.openConnection();
+                conn.setRequestMethod("POST");
+                conn.setRequestProperty("Content-Type", "application/json");
+                if (!apiKey.isEmpty()) {
+                    conn.setRequestProperty("Authorization", "Bearer " + apiKey);
+                }
+                conn.setDoOutput(true);
+                
+                java.io.OutputStream os = conn.getOutputStream();
+                os.write(payload.toString().getBytes("UTF-8"));
+                os.flush();
+                os.close();
+                
+                int responseCode = conn.getResponseCode();
+                if (responseCode == java.net.HttpURLConnection.HTTP_OK) {
+                    java.io.BufferedReader br = new java.io.BufferedReader(new java.io.InputStreamReader(conn.getInputStream()));
+                    StringBuilder sb = new StringBuilder();
+                    String line;
+                    while ((line = br.readLine()) != null) sb.append(line);
+                    br.close();
+                    
+                    org.json.JSONObject responseJson = new org.json.JSONObject(sb.toString());
+                    String description = responseJson.getJSONArray("choices").getJSONObject(0).getJSONObject("message").getString("content");
+                    
+                    runOnUiThread(() -> speak(description));
+                } else {
+                    Log.e(TAG, "LLM API Error: " + responseCode);
+                    appendLog(devLogs, "LLM API Error: " + responseCode);
+                }
+                conn.disconnect();
+            } catch (Exception e) {
+                Log.e(TAG, "LLM Request failed", e);
+                appendLog(devLogs, "LLM Request failed: " + e.getMessage());
+            }
+        }).start();
     }
 
     // ─── Lifecycle ────────────────────────────────────────────────────────────
@@ -442,6 +587,11 @@ public class MainActivity extends AppCompatActivity implements TextToSpeech.OnIn
         // Called by C++ JNI for dev logging (like FPS)
         public void onDevLog(String msg) {
             activity.appendLog(activity.devLogs, msg);
+        }
+
+        // Called by C++ JNI when a scene description is triggered
+        public void onSceneTriggered(String base64Image) {
+            activity.requestSceneDescription(base64Image);
         }
     }
     
