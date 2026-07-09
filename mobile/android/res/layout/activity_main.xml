@@ -67,6 +67,17 @@
                 android:drawableTop="@android:drawable/ic_menu_camera" />
 
             <Button
+                android:id="@+id/btn_torch"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:text="Torch"
+                android:backgroundTint="#00000000"
+                android:textColor="#FFFFFF"
+                android:textSize="12sp"
+                android:drawableTop="@android:drawable/ic_menu_compass" />
+
+            <Button
                 android:id="@+id/btn_logs_toggle"
                 android:layout_width="0dp"
                 android:layout_height="wrap_content"
