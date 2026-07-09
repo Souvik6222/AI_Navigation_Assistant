@@ -163,7 +163,7 @@ class ClaudeClient:
         self._voice_engine = None
         self._status = "idle"
 
-        # Load API key
+        # Load API key(s)
         try:
             from dotenv import load_dotenv
             load_dotenv()
@@ -171,15 +171,18 @@ class ClaudeClient:
             pass
 
         api_key = os.environ.get("GROQ_API_KEY", "")
+        self.api_keys = [key.strip() for key in api_key.split(",") if key.strip() and key.strip() != "your_api_key_here"]
+        self.current_key_index = 0
 
-        if not api_key or api_key == "your_api_key_here":
+        if not self.api_keys:
             log.warning("GROQ_API_KEY not set — Groq features disabled")
             self.enabled = False
         else:
             try:
                 from groq import Groq
-                self._client = Groq(api_key=api_key)
-                log.info(f"Groq client initialized — model={self.model}")
+                # Initialize first client
+                self._client = Groq(api_key=self.api_keys[0])
+                log.info(f"Groq client initialized with primary key — model={self.model} (total keys: {len(self.api_keys)})")
             except ImportError:
                 log.error("groq package not installed — run: pip install groq")
                 self.enabled = False
@@ -194,6 +197,31 @@ class ClaudeClient:
     def get_status(self) -> str:
         """Get current Groq API status for status bar."""
         return self._status
+
+    def _make_api_call(self, func, *args, **kwargs):
+        """
+        Executes a Groq API call. If it fails (e.g. key expired, rate limited, or invalid), 
+        it automatically rotates to the next API key in the list and retries.
+        """
+        from groq import Groq
+        attempts = len(self.api_keys)
+        for attempt in range(attempts):
+            try:
+                if self._client is None:
+                    self._client = Groq(api_key=self.api_keys[self.current_key_index])
+                return func(self._client, *args, **kwargs)
+            except Exception as e:
+                err_msg = str(e).lower()
+                is_auth_error = any(x in err_msg for x in ["auth", "unauthorized", "api_key", "invalid", "expired", "rate_limit", "401", "403", "429"])
+                log.warning(f"Groq API call failed using key index {self.current_key_index}: {e}")
+                
+                if is_auth_error and len(self.api_keys) > 1:
+                    self.current_key_index = (self.current_key_index + 1) % len(self.api_keys)
+                    log.info(f"Rotating to next Groq API key (index {self.current_key_index})...")
+                    self._client = None  # Force re-init on next attempt
+                else:
+                    raise e
+        raise Exception("All configured Groq API keys failed.")
 
     def describe_scene_async(
         self,
@@ -258,32 +286,35 @@ class ClaudeClient:
             # Make API call with image (Groq uses OpenAI-compatible format)
             log.info("Sending scene description request to Groq...")
 
-            message = self._client.chat.completions.create(
-                model=self.model,
-                max_tokens=self.max_tokens,
-                temperature=self.temperature,
-                messages=[
-                    {
-                        "role": "system",
-                        "content": system_prompt,
-                    },
-                    {
-                        "role": "user",
-                        "content": [
-                            {
-                                "type": "image_url",
-                                "image_url": {
-                                    "url": f"data:image/jpeg;base64,{frame_base64}",
+            def call_chat(client):
+                return client.chat.completions.create(
+                    model=self.model,
+                    max_tokens=self.max_tokens,
+                    temperature=self.temperature,
+                    messages=[
+                        {
+                            "role": "system",
+                            "content": system_prompt,
+                        },
+                        {
+                            "role": "user",
+                            "content": [
+                                {
+                                    "type": "image_url",
+                                    "image_url": {
+                                        "url": f"data:image/jpeg;base64,{frame_base64}",
+                                    },
                                 },
-                            },
-                            {
-                                "type": "text",
-                                "text": user_prompt,
-                            },
-                        ],
-                    },
-                ],
-            )
+                                {
+                                    "type": "text",
+                                    "text": user_prompt,
+                                },
+                            ],
+                        },
+                    ],
+                )
+
+            message = self._make_api_call(call_chat)
 
             response_text = message.choices[0].message.content.strip()
             log.info(f"Groq response: {response_text}")
@@ -342,15 +373,18 @@ class ClaudeClient:
             prompt = STARTUP_PROMPT.format(language=lang_name)
             system = SYSTEM_PROMPT.format(language=lang_name)
 
-            message = self._client.chat.completions.create(
-                model=self.model,
-                max_tokens=50,
-                temperature=0.5,
-                messages=[
-                    {"role": "system", "content": system},
-                    {"role": "user", "content": prompt},
-                ],
-            )
+            def call_greeting(client):
+                return client.chat.completions.create(
+                    model=self.model,
+                    max_tokens=50,
+                    temperature=0.5,
+                    messages=[
+                        {"role": "system", "content": system},
+                        {"role": "user", "content": prompt},
+                    ],
+                )
+
+            message = self._make_api_call(call_greeting)
             return message.choices[0].message.content.strip()
         except Exception as e:
             log.error(f"Startup greeting failed: {e}")
