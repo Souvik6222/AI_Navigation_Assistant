@@ -166,13 +166,13 @@ public class MainActivity extends AppCompatActivity implements TextToSpeech.OnIn
     }
 
     public void speak(String text) {
-        if (ttsReady && tts != null) tts.speak(text, TextToSpeech.QUEUE_ADD, null, null);
-        appendLog(normalLogs, "Voice: " + text);
+        if (ttsReady && tts != null) tts.speak(text, TextToSpeech.QUEUE_FLUSH, null, null);
+        appendLog(normalLogs, "TTS: " + text);
     }
 
     public void speakUrgent(String text) {
         if (ttsReady && tts != null) tts.speak(text, TextToSpeech.QUEUE_FLUSH, null, null);
-        appendLog(normalLogs, "URGENT: " + text);
+        appendLog(normalLogs, "TTS URGENT: " + text);
     }
 
     private void appendLog(LinkedList<String> logList, String message) {
