@@ -31,10 +31,12 @@ public:
     using AlertCallback = std::function<void(const std::string&, bool)>;
     using VisualCallback = std::function<void(const std::vector<float>&)>;
     using DevLogCallback = std::function<void(const std::string&)>;
+    using SceneTriggeredCallback = std::function<void(const std::string&)>;
 
     void set_alert_callback(AlertCallback cb);
     void set_visual_callback(VisualCallback cb);
     void set_dev_log_callback(DevLogCallback cb);
+    void set_scene_triggered_callback(SceneTriggeredCallback cb);
 
 #ifdef __ANDROID__
     // Android-only: called from JNI with each raw NV21 camera frame.
@@ -69,6 +71,7 @@ private:
     double fps_start_time_ = 0.0;
     float current_fps_ = 0.0f;
     int frame_index_ = 0;   // for Android push_frame counter
+    double last_scene_trigger_time_ = 0.0;
 
     std::atomic<bool> running_{false};
     std::mutex frame_mutex_;  // guards push_frame() — NNAPI is not concurrent-safe
@@ -77,4 +80,5 @@ private:
     AlertCallback alert_callback_;
     VisualCallback visual_callback_;
     DevLogCallback dev_log_callback_;
+    SceneTriggeredCallback scene_triggered_callback_;
 };

@@ -31,6 +31,7 @@ static std::mutex g_jni_mutex;
 static jobject g_thiz_ref = nullptr;
 static jmethodID g_on_detections_mid = nullptr;
 static jmethodID g_on_dev_log_mid = nullptr;
+static jmethodID g_on_scene_triggered_mid = nullptr;
 
 // JNI callback for TTS — thread-safe, called from the pipeline thread
 static void speak_callback(const std::string& text, bool urgent) {
@@ -124,6 +125,32 @@ static void dev_log_callback(const std::string& msg) {
     if (did_attach) g_jvm->DetachCurrentThread();
 }
 
+static void scene_triggered_callback(const std::string& base64Image) {
+    std::lock_guard<std::mutex> lock(g_jni_mutex);
+    if (!g_jvm || !g_thiz_ref || !g_on_scene_triggered_mid) return;
+
+    JNIEnv* env = nullptr;
+    bool did_attach = false;
+    int status = g_jvm->GetEnv(reinterpret_cast<void**>(&env), JNI_VERSION_1_6);
+
+    if (status == JNI_EDETACHED) {
+        if (g_jvm->AttachCurrentThread(&env, nullptr) != JNI_OK) return;
+        did_attach = true;
+    } else if (status != JNI_OK) {
+        return;
+    }
+
+    jstring jmsg = env->NewStringUTF(base64Image.c_str());
+    env->CallVoidMethod(g_thiz_ref, g_on_scene_triggered_mid, jmsg);
+    env->DeleteLocalRef(jmsg);
+
+    if (env->ExceptionCheck()) {
+        env->ExceptionClear();
+    }
+
+    if (did_attach) g_jvm->DetachCurrentThread();
+}
+
 extern "C" {
 
 JNIEXPORT void JNICALL
@@ -154,6 +181,7 @@ Java_com_navigation_assistant_MainActivity_00024NativePipeline_start(
     jclass thiz_cls = env->GetObjectClass(thiz);
     g_on_detections_mid = env->GetMethodID(thiz_cls, "onDetections", "([F)V");
     g_on_dev_log_mid = env->GetMethodID(thiz_cls, "onDevLog", "(Ljava/lang/String;)V");
+    g_on_scene_triggered_mid = env->GetMethodID(thiz_cls, "onSceneTriggered", "(Ljava/lang/String;)V");
 
     // Build config with model paths pointing to extracted internal-storage files
     Config cfg;
@@ -163,7 +191,7 @@ Java_com_navigation_assistant_MainActivity_00024NativePipeline_start(
     std::string base_path = native_data_path;
     env->ReleaseStringUTFChars(data_path, native_data_path);
 
-    cfg.yolo_model_path  = base_path + "/yolov8n.onnx";
+    cfg.yolo_model_path  = base_path + "/yolov8n_int8.onnx";
     cfg.midas_model_path = base_path + "/midas_v21_small_256.onnx";
 
     // Force 640x640 so the square crop doesn't get distorted into a rectangle
@@ -181,8 +209,9 @@ Java_com_navigation_assistant_MainActivity_00024NativePipeline_start(
         "stop sign", "fire hydrant", "bench"
     };
 
-    // Slightly higher confidence to reduce false positives on ambiguous shapes
-    cfg.confidence_threshold  = 0.50f;
+    // yolov8n_int8: best speed/accuracy tradeoff on mobile hardware
+    // 0.45 threshold avoids false positives (jackets, blankets etc.)
+    cfg.confidence_threshold  = 0.45f;
     cfg.nms_iou_threshold     = 0.40f;
 
     LOGI("Starting pipeline with models at: %s", base_path.c_str());
@@ -191,6 +220,7 @@ Java_com_navigation_assistant_MainActivity_00024NativePipeline_start(
     g_pipeline->set_alert_callback(speak_callback);
     g_pipeline->set_visual_callback(visual_callback);
     g_pipeline->set_dev_log_callback(dev_log_callback);
+    g_pipeline->set_scene_triggered_callback(scene_triggered_callback);
     g_running.store(true);
 
     g_pipeline_thread = std::thread([]() {

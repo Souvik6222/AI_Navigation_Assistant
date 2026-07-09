@@ -54,6 +54,7 @@ bool Pipeline::init() {
 #endif
 
     fps_start_time_ = (double)cv::getTickCount() / cv::getTickFrequency();
+    last_scene_trigger_time_ = fps_start_time_;
     running_.store(true);
     return true;
 }
@@ -77,6 +78,10 @@ void Pipeline::set_visual_callback(VisualCallback cb) {
 
 void Pipeline::set_dev_log_callback(DevLogCallback cb) {
     dev_log_callback_ = std::move(cb);
+}
+
+void Pipeline::set_scene_triggered_callback(SceneTriggeredCallback cb) {
+    scene_triggered_callback_ = std::move(cb);
 }
 
 int Pipeline::run() {
@@ -277,6 +282,18 @@ void Pipeline::process_frame(cv::Mat& frame, int frame_index) {
         cached_annotated_frame_, language_,
         current_fps_, (int)cached_tracked_objects_.size()
     );
+
+    // Auto trigger scene description every 15 seconds
+    double now = (double)cv::getTickCount() / cv::getTickFrequency();
+    if (scene_triggered_callback_ && (now - last_scene_trigger_time_ >= 15.0)) {
+        if (!cached_annotated_frame_.empty()) {
+            std::string b64 = frame_to_base64(cached_annotated_frame_);
+            std::thread([this, b64]() {
+                scene_triggered_callback_(b64);
+            }).detach();
+            last_scene_trigger_time_ = now;
+        }
+    }
 
 #ifndef __ANDROID__
     if (config_.show_window) {
