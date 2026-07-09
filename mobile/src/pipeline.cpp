@@ -219,6 +219,60 @@ void Pipeline::process_frame(cv::Mat& frame, int frame_index) {
                 );
                 det.distance_m = depth_estimator_->get_distance(depth_map, det.bbox);
             }
+
+            // Depth-only wall check: if center zone is very close but YOLO sees nothing
+            // (happens with featureless white/plain walls), announce a generic obstacle.
+            // MiDaS raw values are INVERTED: high = close, low = far.
+            // We look at the center 30% of the frame as a depth_map region.
+            if (!depth_map.empty()) {
+                int cx = depth_map.cols / 2, cy = depth_map.rows / 2;
+                int rw = depth_map.cols / 6, rh = depth_map.rows / 6; // 30% strip
+                cv::Rect center_roi(cx - rw, cy - rh, rw * 2, rh * 2);
+                center_roi &= cv::Rect(0, 0, depth_map.cols, depth_map.rows);
+                cv::Mat center_patch = depth_map(center_roi);
+                double mean_depth = cv::mean(center_patch)[0];
+
+                // mean_depth > 0.65 means center is very close (MiDaS: high = close, 0-1 float)
+                double high_thresh = 0.65;
+                if (mean_depth > high_thresh && detections_.empty()) {
+                    // Inject a fake "wall" detection so the tracker/decision engine handle it
+                    Detection wall_det;
+                    wall_det.label = "wall";
+                    wall_det.confidence = 1.0f;
+                    wall_det.direction = "CENTER";
+                    wall_det.distance_m = 1.0f; // raw depth only — treat as ~1m
+                    wall_det.center_x = fw / 2.0f;
+                    wall_det.center_y = config_.frame_height / 2.0f;
+                    wall_det.bbox = {cx - rw, cy - rh, cx + rw, cy + rh};
+                    wall_det.class_id = 999;
+                    detections_.push_back(wall_det);
+                }
+            }
+        } else {
+            // Even with no detections, still run depth to check for walls
+            cv::Mat depth_map = depth_estimator_->estimate(frame);
+            if (!depth_map.empty()) {
+                int cx = depth_map.cols / 2, cy = depth_map.rows / 2;
+                int rw = depth_map.cols / 6, rh = depth_map.rows / 6;
+                cv::Rect center_roi(cx - rw, cy - rh, rw * 2, rh * 2);
+                center_roi &= cv::Rect(0, 0, depth_map.cols, depth_map.rows);
+                cv::Mat center_patch = depth_map(center_roi);
+                double mean_depth = cv::mean(center_patch)[0];
+
+                double high_thresh = 0.65; // depth map is 0.0-1.0 float (high = close)
+                if (mean_depth > high_thresh) {
+                    Detection wall_det;
+                    wall_det.label = "wall";
+                    wall_det.confidence = 1.0f;
+                    wall_det.direction = "CENTER";
+                    wall_det.distance_m = 1.0f;
+                    wall_det.center_x = fw / 2.0f;
+                    wall_det.center_y = config_.frame_height / 2.0f;
+                    wall_det.bbox = {cx - rw, cy - rh, cx + rw, cy + rh};
+                    wall_det.class_id = 999;
+                    detections_.push_back(wall_det);
+                }
+            }
         }
 
         cached_tracked_objects_ = tracker_->update(detections_, fw);

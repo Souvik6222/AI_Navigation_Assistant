@@ -201,13 +201,28 @@ Java_com_navigation_assistant_MainActivity_00024NativePipeline_start(
 
     // Only detect classes relevant to indoor navigation.
     // Keeps horse, airplane, cow, etc. from generating false alerts.
+    // COCO classes: "refrigerator" is the closest to metal cupboard/cabinet.
     cfg.whitelist = {
         "person", "bicycle", "car", "motorcycle", "bus", "truck",
         "chair", "couch", "bed", "dining table", "toilet", "tv", "laptop",
         "cell phone", "bottle", "cup", "backpack", "handbag", "suitcase",
         "umbrella", "book", "potted plant", "dog", "cat",
-        "stop sign", "fire hydrant", "bench"
+        "stop sign", "fire hydrant", "bench",
+        // Additional indoor furniture/appliances
+        "refrigerator", "microwave", "oven", "sink", "clock", "vase", "scissors",
+        // Virtual depth-based label (injected by pipeline for featureless obstacles)
+        "wall"
     };
+
+    // Depth scale: MiDaS outputs relative (not absolute) depth.
+    // Increasing depth_scale amplifies reported distances so walls ~1.5 MiDaS units
+    // map to ~5m, triggering "Wall nearby ahead" instead of silence.
+    cfg.depth_scale  = 3.5f;
+    cfg.depth_offset = 0.1f;
+    cfg.max_distance = 8.0f;
+    cfg.info_threshold = 7.0f;   // Announce objects up to 7m away
+    cfg.warning_threshold = 5.0f;
+    cfg.urgent_threshold  = 2.0f;
 
     // yolov8n_int8: best speed/accuracy tradeoff on mobile hardware
     // 0.45 threshold avoids false positives (jackets, blankets etc.)
