@@ -7,10 +7,10 @@ License text copyright (c) 2023 MariaDB plc, All Rights Reserved.
 
 Parameters
 
-Licensor:             Souvik (github.com/Souvik6222)
+Licensor:             Souvik (github.com/Souvik6222) & vedant (https://github.com/vedantdubal-141)
 
 Licensed Work:        AI Navigation Assistant
-                      The Licensed Work is (c) 2026 Souvik
+                      The Licensed Work is (c) 2026 Souvik & vedant
 
 Additional Use Grant: Production use is permitted, at no charge, solely under
                       the following non-commercial conditions:
@@ -41,7 +41,9 @@ Additional Use Grant: Production use is permitted, at no charge, solely under
                       contact the Licensor via GitHub:
                       https://github.com/Souvik6222/AI_Navigation_Assistant
 
-Change Date:          2030-07-09
+Change Date:          Four (4) years after the date of the first publicly
+                      available distribution of each specific version of the
+                      Licensed Work under this License.
 
 Change License:       GNU General Public License version 3 (GPL v3) or any
                       later version, as published by the Free Software
@@ -55,9 +57,10 @@ The Business Source License (this document, or the "License") is not an Open
 Source license. However, the Licensed Work will eventually be made available
 under an Open Source License, as stated in this License.
 
-On the Change Date (2030-07-09), this Licensed Work will automatically
-transition to the GNU General Public License v3 (GPL v3), giving the
-community full open-source rights.
+On the Change Date (four years after first release of each version), each
+version of the Licensed Work will automatically transition to the GNU General
+Public License v3 (GPL v3), giving the community full open-source rights.
+For example: v0.0.2-alpha (released 2026-07-09) → becomes GPL on 2030-07-09.
 
 For more information on the use of the Business Source License generally,
 please visit the Adopting and Developing Business Source License FAQ at
