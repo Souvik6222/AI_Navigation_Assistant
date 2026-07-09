@@ -159,19 +159,35 @@ def pipeline_thread(config: dict, loop: asyncio.AbstractEventLoop):
     process_every_n = max(1, perf_config.get("process_every_n_frames", 3))
     log.info(f"Frame skipping: processing every {process_every_n} frame(s)")
 
-    # ---- Open webcam ----
-    log.info(f"Opening camera (index={cam_index})...")
-    cap = cv2.VideoCapture(cam_index)
+    # ---- Open webcam in background thread (avoids blocking when IP camera is unreachable) ----
+    log.info(f"Opening camera in background (index={cam_index})...")
+    cap = None
+    _cam_ready = threading.Event()
 
-    if not cap.isOpened():
-        log.error("Failed to open webcam!")
-        voice_engine.speak("Camera not found. Please check your webcam connection.", "en")
-        # Don't return — allow test mode to work without a camera
-        cap = None
-    else:
-        cap.set(cv2.CAP_PROP_FRAME_WIDTH, frame_width)
-        cap.set(cv2.CAP_PROP_FRAME_HEIGHT, frame_height)
-        log.info(f"Camera opened — {frame_width}x{frame_height}")
+    def _open_camera():
+        nonlocal cap
+        try:
+            _cap = cv2.VideoCapture(cam_index)
+            if _cap.isOpened():
+                _cap.set(cv2.CAP_PROP_FRAME_WIDTH, frame_width)
+                _cap.set(cv2.CAP_PROP_FRAME_HEIGHT, frame_height)
+                cap = _cap
+                log.info(f"Camera opened — {frame_width}x{frame_height}")
+            else:
+                _cap.release()
+                log.error("Failed to open webcam!")
+                voice_engine.speak("Camera not found. Please check your webcam connection.", "en")
+        except Exception as e:
+            log.error(f"Camera open error: {e}")
+        finally:
+            _cam_ready.set()
+
+    cam_thread = threading.Thread(target=_open_camera, daemon=True, name="CameraOpen")
+    cam_thread.start()
+    # Wait up to 10 seconds — pipeline starts immediately after regardless
+    _cam_ready.wait(timeout=10)
+    if not _cam_ready.is_set() or cap is None:
+        log.warning("Camera not available within timeout — starting pipeline (test mode still works)")
 
     # Initial environment scan state
     initial_scan_triggered = False
@@ -220,22 +236,23 @@ def pipeline_thread(config: dict, loop: asyncio.AbstractEventLoop):
                     if test_cap.isOpened():
                         is_test_mode = True
                         test_mode_state["active"] = True
-                        test_mode_state["total_frames"] = int(test_cap.get(cv2.CAP_PROP_FRAME_COUNT))
                         test_mode_state["video_fps"] = test_cap.get(cv2.CAP_PROP_FPS) or 30
                         test_mode_state["current_frame"] = 0
                         test_mode_state["progress"] = 0.0
+                        test_mode_state["total_frames"] = 1  # placeholder until bg thread gets real count
                         
-                        # Fetch frame count in background thread to prevent blocking startup
-                        def _async_frame_count(cap_obj):
+                        # Fetch frame count in background thread to prevent blocking the pipeline
+                        def _async_frame_count(cap_path):
                             try:
-                                count = int(cap_obj.get(cv2.CAP_PROP_FRAME_COUNT))
+                                probe = cv2.VideoCapture(cap_path)
+                                count = int(probe.get(cv2.CAP_PROP_FRAME_COUNT))
+                                probe.release()
                                 if count > 0:
                                     test_mode_state["total_frames"] = count
                             except Exception:
                                 pass
                         
-                        test_mode_state["total_frames"] = 1  # placeholder
-                        threading.Thread(target=_async_frame_count, args=(test_cap,), daemon=True).start()
+                        threading.Thread(target=_async_frame_count, args=(video_path,), daemon=True).start()
                         
                         # Reset tracker for fresh test
                         tracker.reset() if hasattr(tracker, 'reset') else None
@@ -261,7 +278,6 @@ def pipeline_thread(config: dict, loop: asyncio.AbstractEventLoop):
                 # To prevent lag on heavy/high-FPS videos, calculate how many frames to skip
                 # based on the elapsed time of processing.
                 fps_video = test_mode_state["video_fps"]
-                current_frame = test_mode_state["current_frame"]
                 total = test_mode_state["total_frames"]
                 
                 # Check how much real time has passed since loop started
@@ -271,9 +287,11 @@ def pipeline_thread(config: dict, loop: asyncio.AbstractEventLoop):
                     # Calculate how many frames we should advance
                     frames_to_skip = int(elapsed * fps_video)
                     if frames_to_skip > 1:
-                        # Skip ahead in the video capture stream to catch up
-                        target_frame = min(total - 1, current_frame + frames_to_skip)
-                        test_cap.set(cv2.CAP_PROP_POS_FRAMES, target_frame)
+                        # Use grab() instead of set(CAP_PROP_POS_FRAMES) — much faster
+                        # grab() reads but doesn't decode frames, avoiding expensive seeks
+                        for _ in range(min(frames_to_skip - 1, 30)):  # cap at 30 to avoid long loops
+                            if not test_cap.grab():
+                                break
                 
                 pipeline_thread.last_frame_time = now
 
@@ -291,8 +309,13 @@ def pipeline_thread(config: dict, loop: asyncio.AbstractEventLoop):
                     time.sleep(0.01)
                     continue
                 
-                test_mode_state["current_frame"] = int(test_cap.get(cv2.CAP_PROP_POS_FRAMES))
+                test_mode_state["current_frame"] += 1
                 test_mode_state["progress"] = test_mode_state["current_frame"] / total if total > 0 else 0
+                
+                # Downscale large frames (e.g. 4K) to processing resolution to avoid GPU/CPU bottleneck
+                fh, fw = frame.shape[:2]
+                if fw > frame_width * 2 or fh > frame_height * 2:
+                    frame = cv2.resize(frame, (frame_width, frame_height), interpolation=cv2.INTER_AREA)
             elif cap and cap.isOpened():
                 ret, frame = cap.read()
                 if not ret:
