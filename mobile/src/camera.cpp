@@ -61,15 +61,29 @@ void CameraStream::stop() {
 }
 
 void CameraStream::reader_loop() {
+    double fps = cap_.get(cv::CAP_PROP_FPS);
+    if (fps <= 0) fps = 30.0;
+    int delay_ms = (int)(1000.0 / fps);
+
     while (running_) {
         cv::Mat frame;
         bool ret = cap_.read(frame);
         if (ret) {
-            std::lock_guard<std::mutex> lock(mutex_);
-            latest_frame_ = frame.clone();
-            got_frame_ = true;
+            {
+                std::lock_guard<std::mutex> lock(mutex_);
+                latest_frame_ = frame.clone();
+                got_frame_ = true;
+            }
+            if (use_url_) {
+                std::this_thread::sleep_for(std::chrono::milliseconds(delay_ms));
+            }
         } else {
-            std::this_thread::sleep_for(std::chrono::milliseconds(50));
+            if (use_url_) {
+                // Loop the video back to the beginning
+                cap_.set(cv::CAP_PROP_POS_FRAMES, 0);
+            } else {
+                std::this_thread::sleep_for(std::chrono::milliseconds(50));
+            }
         }
     }
 }

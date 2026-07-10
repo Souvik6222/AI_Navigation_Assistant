@@ -113,10 +113,12 @@ int Pipeline::run() {
             }
         }
 
-        frame = resize_frame(frame, config_.frame_width, config_.frame_height);
+        // Save original aspect ratio before squishing to 640x640 for YOLO
+        original_aspect_ = (float)frame.cols / (float)frame.rows;
 
-        // Center-crop to square for 1:1 aspect ratio (matches YOLO's 640x640 input)
-        frame = center_crop_square(frame);
+        // Resize directly to processing resolution (no center crop on desktop
+        // to preserve full field of view; YOLO handles slight aspect distortion fine)
+        frame = resize_frame(frame, config_.frame_width, config_.frame_height);
 
         frame_index++;
 
@@ -351,7 +353,60 @@ void Pipeline::process_frame(cv::Mat& frame, int frame_index) {
 
 #ifndef __ANDROID__
     if (config_.show_window) {
-        cv::imshow("AI Navigation Assistant", display);
+        // Scale display back to correct aspect ratio and fill ~80% of screen
+        int target_height = 700;
+        int target_width = (int)(target_height * original_aspect_);
+        // Clamp so it doesn't exceed a reasonable screen width
+        if (target_width > 1400) { target_width = 1400; target_height = (int)(1400 / original_aspect_); }
+        cv::Mat scaled_display;
+        cv::resize(display, scaled_display, cv::Size(target_width, target_height), 0, 0, cv::INTER_LINEAR);
+
+        int sidebar_width = 320;
+        int hud_width = scaled_display.cols + sidebar_width;
+        int hud_height = scaled_display.rows;
+
+        cv::Mat hud = cv::Mat(hud_height, hud_width, CV_8UC3, cv::Scalar(30, 30, 30));
+        
+        scaled_display.copyTo(hud(cv::Rect(0, 0, scaled_display.cols, scaled_display.rows)));
+
+        int right_x = scaled_display.cols + 20;
+        int y = 50;
+        
+        cv::putText(hud, "AI NAV DEV DASHBOARD", cv::Point(right_x, y),
+                    cv::FONT_HERSHEY_SIMPLEX, 0.7, cv::Scalar(255, 255, 255), 2);
+        y += 40;
+
+        cv::putText(hud, "Status: ACTIVE", cv::Point(right_x, y),
+                    cv::FONT_HERSHEY_SIMPLEX, 0.6, cv::Scalar(0, 255, 0), 2);
+        y += 30;
+
+        char buf_fps[64];
+        snprintf(buf_fps, sizeof(buf_fps), "FPS: %.1f", current_fps_);
+        cv::putText(hud, buf_fps, cv::Point(right_x, y),
+                    cv::FONT_HERSHEY_SIMPLEX, 0.6, cv::Scalar(200, 200, 200), 1);
+        y += 30;
+
+        cv::putText(hud, "Language: " + language_, cv::Point(right_x, y),
+                    cv::FONT_HERSHEY_SIMPLEX, 0.6, cv::Scalar(200, 200, 200), 1);
+        y += 40;
+
+        cv::putText(hud, "Tracked Objects: " + std::to_string(cached_tracked_objects_.size()), cv::Point(right_x, y),
+                    cv::FONT_HERSHEY_SIMPLEX, 0.6, cv::Scalar(255, 255, 0), 1);
+        y += 30;
+
+        for (const auto& obj : cached_tracked_objects_) {
+            char buf[128];
+            snprintf(buf, sizeof(buf), "- %s (%.1fm) [%s]", obj.label.c_str(), obj.distance_m, obj.alert_level.c_str());
+            cv::putText(hud, buf, cv::Point(right_x + 10, y),
+                        cv::FONT_HERSHEY_SIMPLEX, 0.5, cv::Scalar(200, 200, 200), 1);
+            y += 25;
+        }
+
+        y += 30;
+        cv::putText(hud, "LLM Prompt: \"What is in front of me?\"", cv::Point(right_x, y),
+                    cv::FONT_HERSHEY_SIMPLEX, 0.5, cv::Scalar(100, 255, 100), 1);
+
+        cv::imshow("AI Navigation Assistant", hud);
     }
 #endif
 }

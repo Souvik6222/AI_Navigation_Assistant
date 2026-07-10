@@ -70,6 +70,7 @@ private:
     int fps_counter_ = 0;
     double fps_start_time_ = 0.0;
     float current_fps_ = 0.0f;
+    float original_aspect_ = 1.0f;  // original video aspect ratio (w/h) for correct HUD display
     int frame_index_ = 0;   // for Android push_frame counter
     double last_scene_trigger_time_ = 0.0;
 

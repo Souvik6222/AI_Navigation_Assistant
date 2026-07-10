@@ -91,16 +91,20 @@ static Config load_config(const std::string& path) {
 int main(int argc, char** argv) {
     std::string config_path = "config.yaml";
     bool headless = false;
+    std::string video_path = "";
 
     for (int i = 1; i < argc; ++i) {
         if (strcmp(argv[i], "--config") == 0 && i + 1 < argc)
             config_path = argv[++i];
+        else if (strcmp(argv[i], "--video") == 0 && i + 1 < argc)
+            video_path = argv[++i];
         else if (strcmp(argv[i], "--no-display") == 0)
             headless = true;
         else if (strcmp(argv[i], "--help") == 0) {
             std::cout << "AI Navigation Assistant (Mobile C++ Port)\n"
                       << "Usage: " << argv[0] << " [options]\n"
                       << "  --config <path>   Config file path (default: config.yaml)\n"
+                      << "  --video <path>    Run a video file instead of live camera\n"
                       << "  --no-display      Disable display window (headless mode)\n"
                       << "  --help            Show this help\n";
             return 0;
@@ -113,12 +117,26 @@ int main(int argc, char** argv) {
     std::cout << "AI Navigation Assistant — Mobile C++ Port\n";
     std::cout << "========================================\n";
 
-    // Interactive prompt for PC testing
-    std::cout << "\nDo you want to configure inputs interactively? [y/N]: ";
+    if (video_path.empty()) {
+        std::cout << "\nEnter video path to test, or press ENTER to use Live Camera / Default IP: ";
+        std::string input;
+        std::getline(std::cin, input);
+        input = trim(input);
+        if (!input.empty()) {
+            video_path = input;
+        }
+    }
+
+    if (!video_path.empty()) {
+        config.cam_source = video_path;
+        std::cout << "Testing with video: " << video_path << "\n";
+    }
+
+    std::cout << "\nDo you want to configure advanced inputs interactively? [y/N]: ";
     std::string ans;
     std::getline(std::cin, ans);
     if (ans == "y" || ans == "Y") {
-        std::cout << "Enter Camera IP or 0 for internal webcam [" << config.cam_source << "]: ";
+        std::cout << "Enter Camera IP, 0 for webcam, or video path [" << config.cam_source << "]: ";
         std::string cam;
         std::getline(std::cin, cam);
         cam = trim(cam);
@@ -138,9 +156,9 @@ int main(int argc, char** argv) {
     }
 
     std::cout << "\nStarting pipeline with:\n"
-              << " - Camera: " << config.cam_source << "\n"
-              << " - YOLO:   " << config.yolo_model_path << "\n"
-              << " - MiDaS:  " << config.midas_model_path << "\n"
+              << " - Camera/Video: " << config.cam_source << "\n"
+              << " - YOLO:         " << config.yolo_model_path << "\n"
+              << " - MiDaS:        " << config.midas_model_path << "\n"
               << "========================================\n";
 
     Pipeline pipeline(config);
