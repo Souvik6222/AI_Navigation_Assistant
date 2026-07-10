@@ -73,6 +73,7 @@ modules = {}
 # ---- Testing Mode globals ----
 test_mode_state = {
     "active": False,             # True when processing an uploaded video
+    "paused": False,             # True when video playback is paused
     "video_path": None,          # Path to the uploaded test video file
     "switch_requested": False,   # Flag to tell pipeline to swap source
     "stop_requested": False,     # Flag to tell pipeline to go back to camera
@@ -204,6 +205,7 @@ def pipeline_thread(config: dict, loop: asyncio.AbstractEventLoop):
     # Test mode capture (separate from webcam cap)
     test_cap = None
     is_test_mode = False
+    local_window_visible = False
 
     # Cached states for frame skipping
     frame_index = 0
@@ -226,6 +228,9 @@ def pipeline_thread(config: dict, loop: asyncio.AbstractEventLoop):
         while True:
             loop_start = time.time()
 
+            # Check paused state
+            is_paused = is_test_mode and test_mode_state.get("paused", False)
+
             # ---- 0. Check for test mode switch ----
             if test_mode_state["switch_requested"]:
                 test_mode_state["switch_requested"] = False
@@ -236,6 +241,7 @@ def pipeline_thread(config: dict, loop: asyncio.AbstractEventLoop):
                     if test_cap.isOpened():
                         is_test_mode = True
                         test_mode_state["active"] = True
+                        test_mode_state["paused"] = False
                         test_mode_state["video_fps"] = test_cap.get(cv2.CAP_PROP_FPS) or 30
                         test_mode_state["current_frame"] = 0
                         test_mode_state["progress"] = 0.0
@@ -269,53 +275,77 @@ def pipeline_thread(config: dict, loop: asyncio.AbstractEventLoop):
                     test_cap = None
                 is_test_mode = False
                 test_mode_state["active"] = False
+                test_mode_state["paused"] = False
                 test_mode_state["progress"] = 0.0
                 test_mode_state["current_frame"] = 0
+                latest_frame_b64 = ""
+                if hasattr(pipeline_thread, "last_frame_time"):
+                    delattr(pipeline_thread, "last_frame_time")
                 log.info("TESTING MODE: Stopped, returning to live camera")
 
             # ---- 1. Capture frame ----
             if is_test_mode and test_cap:
-                # To prevent lag on heavy/high-FPS videos, calculate how many frames to skip
-                # based on the elapsed time of processing.
-                fps_video = test_mode_state["video_fps"]
-                total = test_mode_state["total_frames"]
-                
-                # Check how much real time has passed since loop started
-                now = time.time()
-                if hasattr(pipeline_thread, "last_frame_time"):
-                    elapsed = now - pipeline_thread.last_frame_time
-                    # Calculate how many frames we should advance
-                    frames_to_skip = int(elapsed * fps_video)
-                    if frames_to_skip > 1:
-                        # Use grab() instead of set(CAP_PROP_POS_FRAMES) — much faster
-                        # grab() reads but doesn't decode frames, avoiding expensive seeks
-                        for _ in range(min(frames_to_skip - 1, 30)):  # cap at 30 to avoid long loops
-                            if not test_cap.grab():
-                                break
-                
-                pipeline_thread.last_frame_time = now
-
-                ret, frame = test_cap.read()
-                if not ret:
-                    # Video finished — loop or stop
-                    log.info("TESTING MODE: Video finished")
-                    test_cap.release()
-                    test_cap = None
-                    is_test_mode = False
-                    test_mode_state["active"] = False
-                    test_mode_state["progress"] = 1.0
+                if is_paused:
+                    pipeline_thread.last_frame_time = time.time()
+                    if 'frame' not in locals() or frame is None:
+                        ret, frame = test_cap.read()
+                        if not ret:
+                            log.info("TESTING MODE: Video finished")
+                            test_cap.release()
+                            test_cap = None
+                            is_test_mode = False
+                            test_mode_state["active"] = False
+                            test_mode_state["paused"] = False
+                            test_mode_state["progress"] = 1.0
+                            latest_frame_b64 = ""
+                            if hasattr(pipeline_thread, "last_frame_time"):
+                                delattr(pipeline_thread, "last_frame_time")
+                            time.sleep(0.01)
+                            continue
+                        test_mode_state["current_frame"] += 1
+                        test_mode_state["progress"] = test_mode_state["current_frame"] / (test_mode_state["total_frames"] or 1)
+                        frame = resize_frame(frame, frame_width, frame_height)
+                    else:
+                        time.sleep(0.03)
+                else:
+                    fps_video = test_mode_state["video_fps"]
+                    total = test_mode_state["total_frames"]
+                    
+                    # Check how much real time has passed since loop started
+                    now = time.time()
                     if hasattr(pipeline_thread, "last_frame_time"):
-                        delattr(pipeline_thread, "last_frame_time")
-                    time.sleep(0.01)
-                    continue
-                
-                test_mode_state["current_frame"] += 1
-                test_mode_state["progress"] = test_mode_state["current_frame"] / total if total > 0 else 0
-                
-                # Downscale large frames (e.g. 4K) to processing resolution to avoid GPU/CPU bottleneck
-                fh, fw = frame.shape[:2]
-                if fw > frame_width * 2 or fh > frame_height * 2:
-                    frame = cv2.resize(frame, (frame_width, frame_height), interpolation=cv2.INTER_AREA)
+                        elapsed = now - pipeline_thread.last_frame_time
+                        frames_to_skip = int(elapsed * fps_video)
+                        if frames_to_skip > 1:
+                            for _ in range(min(frames_to_skip - 1, 30)):
+                                if not test_cap.grab():
+                                    break
+                    
+                    pipeline_thread.last_frame_time = now
+
+                    ret, frame = test_cap.read()
+                    if not ret:
+                        # Video finished — loop or stop
+                        log.info("TESTING MODE: Video finished")
+                        test_cap.release()
+                        test_cap = None
+                        is_test_mode = False
+                        test_mode_state["active"] = False
+                        test_mode_state["paused"] = False
+                        test_mode_state["progress"] = 1.0
+                        latest_frame_b64 = ""
+                        if hasattr(pipeline_thread, "last_frame_time"):
+                            delattr(pipeline_thread, "last_frame_time")
+                        time.sleep(0.01)
+                        continue
+                    
+                    test_mode_state["current_frame"] += 1
+                    test_mode_state["progress"] = test_mode_state["current_frame"] / total if total > 0 else 0
+                    
+                    # Downscale large frames (e.g. 4K) to processing resolution to avoid GPU/CPU bottleneck
+                    fh, fw = frame.shape[:2]
+                    if fw > frame_width * 2 or fh > frame_height * 2:
+                        frame = cv2.resize(frame, (frame_width, frame_height), interpolation=cv2.INTER_AREA)
             elif cap and cap.isOpened():
                 ret, frame = cap.read()
                 if not ret:
@@ -326,137 +356,159 @@ def pipeline_thread(config: dict, loop: asyncio.AbstractEventLoop):
                 time.sleep(0.1)
                 continue
 
-            frame = resize_frame(frame, frame_width, frame_height)
-            frame_index += 1
-            language = voice_engine.get_language()
+            if not is_paused:
+                frame = resize_frame(frame, frame_width, frame_height)
+                frame_index += 1
+                language = voice_engine.get_language()
 
-            # Trigger initial environment scan on the very first frame
-            if not initial_scan_triggered:
-                initial_scan_triggered = True
-                initial_scan_start_time = time.time()
-                log.info("STARTUP: Triggering initial environment scene description")
-                voice_engine.speak("Scanning environment. Please stand still.", language)
-                
-                # Run detections on this first frame to feed to the LLM
-                first_detections = detector.detect(frame)
-                if len(first_detections) > 0:
-                    depth_map = depth_estimator.estimate(frame)
-                    for det in first_detections:
-                        det["direction"] = get_direction(
-                            det["center_x"], frame_width, left_boundary, right_boundary
-                        )
-                        det["distance_m"] = depth_estimator.get_distance(depth_map, det["bbox"])
-                
-                # Send the first frame to Groq Vision
-                if claude_client.enabled:
-                    frame_b64 = frame_to_base64(frame)
-                    claude_client.describe_scene_async(frame_b64, first_detections, language)
+                # Trigger initial environment scan on the very first frame
+                if not initial_scan_triggered:
+                    initial_scan_triggered = True
+                    initial_scan_start_time = time.time()
+                    log.info("STARTUP: Triggering initial environment scene description")
+                    voice_engine.speak("Scanning environment. Please stand still.", language)
+                    
+                    # Run detections on this first frame to feed to the LLM
+                    first_detections = detector.detect(frame)
+                    if len(first_detections) > 0:
+                        depth_map = depth_estimator.estimate(frame)
+                        for det in first_detections:
+                            det["direction"] = get_direction(
+                                det["center_x"], frame_width, left_boundary, right_boundary
+                            )
+                            det["distance_m"] = depth_estimator.get_distance(depth_map, det["bbox"])
+                    
+                    # Send the first frame to Groq Vision
+                    if claude_client.enabled:
+                        frame_b64 = frame_to_base64(frame)
+                        claude_client.describe_scene_async(frame_b64, first_detections, language)
+                        claude_client.mark_triggered()
+
+                # Only run AI pipeline on every Nth frame
+                if frame_index % process_every_n == 0:
+                    # ---- 2. YOLOv8 Detection ----
+                    t_yolo = time.time()
+                    detections = detector.detect(frame)
+                    lat_yolo = (time.time() - t_yolo) * 1000
+
+                    # ---- 3. MiDaS Depth (CONDITIONAL: only if objects are detected) ----
+                    if len(detections) > 0:
+                        t_midas = time.time()
+                        depth_map = depth_estimator.estimate(frame)
+                        lat_midas = (time.time() - t_midas) * 1000
+
+                        # ---- 4. Enrich with direction + distance ----
+                        for det in detections:
+                            det["direction"] = get_direction(
+                                det["center_x"], frame_width, left_boundary, right_boundary
+                            )
+                            det["distance_m"] = depth_estimator.get_distance(depth_map, det["bbox"])
+                    else:
+                        lat_midas = 0.0
+
+                    # ---- 5. Tracking ----
+                    t_track = time.time()
+                    tracked_objects = tracker.update(detections, frame_width)
+                    lat_tracking = (time.time() - t_track) * 1000
+                    cached_tracked_objects = tracked_objects
+
+                    # ---- 6. Decision engine ----
+                    alerts = decision_engine.evaluate(tracked_objects)
+
+                    # ---- 7. Voice + alert broadcast ----
+                    language = voice_engine.get_language()
+                    speak_info = config.get("voice", {}).get("speak_info_alerts", False)
+                    # Silence real-time voice alerts for the first 5 seconds to let the environment scan finish speaking
+                    silence_voice = (time.time() - initial_scan_start_time) < 5.0
+                    
+                    for alert_obj in alerts:
+                        message = alert_obj.get_message(language)
+
+                        if not pipeline_controls.get("mute_all", False):
+                            if not silence_voice:
+                                if alert_obj.level != "info" or speak_info:
+                                    voice_engine.speak(message, language)
+
+                        # Push to async alert queue
+                        alert_data = {
+                            "type": "alert",
+                            "level": alert_obj.level,
+                            "message": message,
+                            "timestamp": time.strftime("%H:%M:%S"),
+                            "object": {
+                                "label": alert_obj.tracked_object.get("label", "?"),
+                                "distance_m": round(alert_obj.tracked_object.get("distance_m", 0), 1),
+                                "direction": alert_obj.tracked_object.get("direction", "?"),
+                                "track_id": alert_obj.tracked_object.get("track_id", -1),
+                            },
+                        }
+                        try:
+                            loop.call_soon_threadsafe(alert_queue.put_nowait, alert_data)
+                        except Exception:
+                            pass
+                else:
+                    # Skipped frame: reuse cached tracked objects
+                    tracked_objects = cached_tracked_objects
+
+                # ---- 8. Annotate frame ----
+                for obj in tracked_objects:
+                    if "alert_level" not in obj:
+                        dist = obj.get("distance_m", 999)
+                        if dist < 0.8:
+                            obj["alert_level"] = "urgent"
+                        elif dist < 1.5:
+                            obj["alert_level"] = "warning"
+                        elif dist < 2.5:
+                            obj["alert_level"] = "info"
+                        else:
+                            obj["alert_level"] = "silent"
+
+                annotated_frame = annotate_frame(frame, tracked_objects)
+
+                # Status bar on annotated frame
+                language = voice_engine.get_language()
+                annotated_frame = draw_status_bar(
+                    annotated_frame,
+                    language=language,
+                    fps=current_fps,
+                    num_objects=len(tracked_objects),
+                    groq_status=claude_client.get_status(),
+                )
+
+                # ---- 10. Encode frame for dashboard ----
+                _, jpg_buf = cv2.imencode(".jpg", annotated_frame, [cv2.IMWRITE_JPEG_QUALITY, 70])
+                latest_frame_b64 = base64.b64encode(jpg_buf).decode("utf-8")
+
+                # ---- 13. Auto-trigger Groq ----
+                if claude_client.should_auto_trigger() and len(detections) > 0:
+                    frame_b64 = frame_to_base64(annotated_frame)
+                    claude_client.describe_scene_async(frame_b64, detections, language)
                     claude_client.mark_triggered()
 
-            # Only run AI pipeline on every Nth frame
-            if frame_index % process_every_n == 0:
-                # ---- 2. YOLOv8 Detection ----
-                t_yolo = time.time()
-                detections = detector.detect(frame)
-                lat_yolo = (time.time() - t_yolo) * 1000
-
-                # ---- 3. MiDaS Depth (CONDITIONAL: only if objects are detected) ----
-                if len(detections) > 0:
-                    t_midas = time.time()
-                    depth_map = depth_estimator.estimate(frame)
-                    lat_midas = (time.time() - t_midas) * 1000
-
-                    # ---- 4. Enrich with direction + distance ----
-                    for det in detections:
-                        det["direction"] = get_direction(
-                            det["center_x"], frame_width, left_boundary, right_boundary
-                        )
-                        det["distance_m"] = depth_estimator.get_distance(depth_map, det["bbox"])
-                else:
-                    lat_midas = 0.0
-
-                # ---- 5. Tracking ----
-                t_track = time.time()
-                tracked_objects = tracker.update(detections, frame_width)
-                lat_tracking = (time.time() - t_track) * 1000
-                cached_tracked_objects = tracked_objects
-
-                # ---- 6. Decision engine ----
-                alerts = decision_engine.evaluate(tracked_objects)
-
-                # ---- 7. Voice + alert broadcast ----
-                language = voice_engine.get_language()
-                speak_info = config.get("voice", {}).get("speak_info_alerts", False)
-                # Silence real-time voice alerts for the first 5 seconds to let the environment scan finish speaking
-                silence_voice = (time.time() - initial_scan_start_time) < 5.0
-                
-                for alert_obj in alerts:
-                    message = alert_obj.get_message(language)
-
-                    if not pipeline_controls.get("mute_all", False):
-                        if not silence_voice:
-                            if alert_obj.level != "info" or speak_info:
-                                voice_engine.speak(message, language)
-
-                    # Push to async alert queue
-                    alert_data = {
-                        "type": "alert",
-                        "level": alert_obj.level,
-                        "message": message,
-                        "timestamp": time.strftime("%H:%M:%S"),
-                        "object": {
-                            "label": alert_obj.tracked_object.get("label", "?"),
-                            "distance_m": round(alert_obj.tracked_object.get("distance_m", 0), 1),
-                            "direction": alert_obj.tracked_object.get("direction", "?"),
-                            "track_id": alert_obj.tracked_object.get("track_id", -1),
-                        },
-                    }
-                    try:
-                        loop.call_soon_threadsafe(alert_queue.put_nowait, alert_data)
-                    except Exception:
-                        pass
-            else:
-                # Skipped frame: reuse cached tracked objects
-                tracked_objects = cached_tracked_objects
-
-            # ---- 8. Annotate frame ----
-            for obj in tracked_objects:
-                if "alert_level" not in obj:
-                    dist = obj.get("distance_m", 999)
-                    if dist < 0.8:
-                        obj["alert_level"] = "urgent"
-                    elif dist < 1.5:
-                        obj["alert_level"] = "warning"
-                    elif dist < 2.5:
-                        obj["alert_level"] = "info"
-                    else:
-                        obj["alert_level"] = "silent"
-
-            annotated_frame = annotate_frame(frame, tracked_objects)
-
-            # Status bar on annotated frame
-            language = voice_engine.get_language()
-            annotated_frame = draw_status_bar(
-                annotated_frame,
-                language=language,
-                fps=current_fps,
-                num_objects=len(tracked_objects),
-                groq_status=claude_client.get_status(),
-            )
-
             # ---- 9. Local display (optional) ----
-            if pipeline_controls.get("show_display", True):
-                cv2.imshow(window_name, annotated_frame)
-                key = cv2.waitKey(1) & 0xFF
-                if key == ord("q") or key == 27:
-                    log.info("Quit from local window")
-                    break
+            show_disp = pipeline_controls.get("show_display", True)
+            if show_disp:
+                if 'annotated_frame' in locals() and annotated_frame is not None:
+                    cv2.imshow(window_name, annotated_frame)
+                    local_window_visible = True
+                    key = cv2.waitKey(1) & 0xFF
+                    if key == ord("q") or key == 27:
+                        log.info("Local window close requested via key")
+                        pipeline_controls["show_display"] = False
+                        broadcast_control_change("show_display", False, loop)
+                else:
+                    cv2.waitKey(1)
             else:
+                if local_window_visible:
+                    try:
+                        cv2.destroyWindow(window_name)
+                    except Exception:
+                        try:
+                            cv2.destroyAllWindows()
+                        except Exception:
+                            pass
+                    local_window_visible = False
                 cv2.waitKey(1)
-
-            # ---- 10. Encode frame for dashboard ----
-            _, jpg_buf = cv2.imencode(".jpg", annotated_frame, [cv2.IMWRITE_JPEG_QUALITY, 70])
-            latest_frame_b64 = base64.b64encode(jpg_buf).decode("utf-8")
 
             # ---- 11. Total latency ----
             lat_total = (time.time() - loop_start) * 1000
@@ -467,13 +519,13 @@ def pipeline_thread(config: dict, loop: asyncio.AbstractEventLoop):
                 last_telemetry_time = now
                 latest_telemetry = {
                     "type": "telemetry",
-                    "fps": round(current_fps, 1),
+                    "fps": round(current_fps, 1) if not is_paused else 0.0,
                     "resolution": {"width": frame_width, "height": frame_height},
                     "latency": {
-                        "yolo": round(lat_yolo, 1),
-                        "midas": round(lat_midas, 1),
-                        "tracking": round(lat_tracking, 1),
-                        "total": round(lat_total, 1),
+                        "yolo": round(lat_yolo, 1) if not is_paused else 0.0,
+                        "midas": round(lat_midas, 1) if not is_paused else 0.0,
+                        "tracking": round(lat_tracking, 1) if not is_paused else 0.0,
+                        "total": round(lat_total, 1) if not is_paused else 0.0,
                     },
                     "hw": {
                         "cuda": torch.cuda.is_available(),
@@ -490,21 +542,16 @@ def pipeline_thread(config: dict, loop: asyncio.AbstractEventLoop):
                             "alert_level": o.get("alert_level", "silent"),
                         }
                         for o in tracked_objects
-                    ],
+                    ] if 'tracked_objects' in locals() else [],
                     "test_mode": {
                         "active": test_mode_state["active"],
+                        "paused": test_mode_state.get("paused", False),
                         "progress": round(test_mode_state["progress"], 3),
                         "current_frame": test_mode_state["current_frame"],
                         "total_frames": test_mode_state["total_frames"],
                         "filename": test_mode_state["filename"],
                     },
                 }
-
-            # ---- 13. Auto-trigger Groq ----
-            if claude_client.should_auto_trigger() and len(detections) > 0:
-                frame_b64 = frame_to_base64(annotated_frame)
-                claude_client.describe_scene_async(frame_b64, detections, language)
-                claude_client.mark_triggered()
 
             # ---- FPS calculation ----
             fps_counter += 1
@@ -563,6 +610,27 @@ def _push_config_sync(config: dict, loop: asyncio.AbstractEventLoop):
     }
     # Store for new connections
     modules["_config_sync"] = sync_msg
+
+
+def broadcast_control_change(key: str, value, loop: asyncio.AbstractEventLoop):
+    """Broadcast config changes to all connected clients and update sync cache."""
+    sync_msg = modules.get("_config_sync")
+    if sync_msg and "data" in sync_msg:
+        sync_msg["data"][key] = value
+
+    async def _send():
+        with clients_lock:
+            clients = list(connected_clients)
+        for ws in clients:
+            try:
+                await ws.send_json({"type": "config_sync", "data": {key: value}})
+            except Exception:
+                pass
+
+    try:
+        loop.call_soon_threadsafe(lambda: asyncio.create_task(_send()))
+    except Exception as e:
+        log.error(f"Failed to schedule broadcast: {e}")
 
 
 # ============================================================
@@ -654,6 +722,10 @@ def apply_control(key: str, value):
         elif key == "test_mode_stop":
             log.info("Dashboard: stop test mode requested")
             test_mode_state["stop_requested"] = True
+
+        elif key == "test_mode_pause":
+            log.info(f"Dashboard: pause test mode requested: {value}")
+            test_mode_state["paused"] = bool(value)
 
     except Exception as e:
         log.error(f"Control error ({key}): {e}")

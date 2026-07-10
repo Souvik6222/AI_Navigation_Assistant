@@ -9,6 +9,7 @@ export default function TestModeCard({ telemetry, sendControl }) {
 
   const testMode = telemetry?.test_mode || {}
   const isActive = testMode.active || false
+  const isPaused = testMode.paused || false
   const progress = testMode.progress || 0
   const filename = testMode.filename || ''
   const currentFrame = testMode.current_frame || 0
@@ -63,6 +64,10 @@ export default function TestModeCard({ telemetry, sendControl }) {
 
   function handleStop() {
     sendControl('test_mode_stop', true)
+  }
+
+  function handleTogglePause() {
+    sendControl('test_mode_pause', !isPaused)
   }
 
   return (
@@ -125,9 +130,33 @@ export default function TestModeCard({ telemetry, sendControl }) {
               <span>{Math.round(progress * 100)}%</span>
               <span>{currentFrame} / {totalFrames} frames</span>
             </div>
-            <button className="btn btn-danger test-stop-btn" onClick={handleStop}>
-              Stop Test
-            </button>
+            <div className="test-controls-row" style={{ display: 'flex', gap: '8px', marginTop: '12px' }}>
+              <button
+                className={`btn ${isPaused ? 'btn-accent' : ''}`}
+                style={{ flex: 1, justifyContent: 'center' }}
+                onClick={handleTogglePause}
+              >
+                {isPaused ? (
+                  <>
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polygon points="6 3 20 12 6 21 6 3"/></svg>
+                    Resume
+                  </>
+                ) : (
+                  <>
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="14" y="4" width="4" height="16" rx="1"/><rect x="6" y="4" width="4" height="16" rx="1"/></svg>
+                    Pause
+                  </>
+                )}
+              </button>
+              <button
+                className="btn btn-danger"
+                style={{ flex: 1, justifyContent: 'center' }}
+                onClick={handleStop}
+              >
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/></svg>
+                Stop
+              </button>
+            </div>
           </div>
         )}
 
