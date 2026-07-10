@@ -523,9 +523,9 @@ public class MainActivity extends AppCompatActivity implements TextToSpeech.OnIn
                 textContent.put("type", "text");
                 
                 String lang = getSharedPreferences("app_prefs", MODE_PRIVATE).getString("language", "en");
-                String prompt = "Describe this scene very briefly in 1 short sentence for a blind person. Just list the most important objects and their general location. No extra details.";
+                String prompt = "What is in front of me?";
                 if ("hi".equals(lang)) {
-                    prompt = "Describe this scene very briefly in 1 short sentence in Hindi for a blind person. Just list the most important objects. No extra details.";
+                    prompt = "मेरे सामने क्या है?";
                 }
                 textContent.put("text", prompt);
                 content.put(textContent);

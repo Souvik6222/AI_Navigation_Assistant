@@ -26,7 +26,7 @@ void LLMClient::request_scene_description(const std::string& base64_image) {
             "\"messages\": [{"
                 "\"role\": \"user\","
                 "\"content\": ["
-                    "{\"type\": \"text\", \"text\": \"Describe this scene briefly for a visually impaired person. Focus on obstacles and paths.\" },"
+                    "{\"type\": \"text\", \"text\": \"What is in front of me?\" },"
                     "{\"type\": \"image_url\", \"image_url\": {\"url\": \"data:image/jpeg;base64," + base64_image + "\"}}"
                 "]"
             "}],"
